@@ -1,3 +1,5 @@
+//! Construccion del diorama: materiales, terreno procedural y estructuras.
+
 use crate::material::Material;
 use crate::noise::fbm;
 use crate::render::{Light, Scene};
@@ -6,6 +8,7 @@ use crate::texture::{self, Texture};
 use crate::vec3::{v3, Vec3};
 use crate::world::World;
 
+// Identificadores de material = valor guardado en cada voxel.
 pub const M_GRASS: u8 = 0;
 pub const M_DIRT: u8 = 1;
 pub const M_STONE: u8 = 2;
@@ -15,10 +18,11 @@ pub const M_LAVA: u8 = 5;
 pub const M_OBSIDIAN: u8 = 6;
 pub const M_GLASS: u8 = 7;
 
-pub const SIZE: i32 = 16;
+pub const SIZE: i32 = 16; // area del terreno procedural: 16x16 cubos
 pub const SEA_LEVEL: i32 = 4;
 
 pub fn build(seed: u32) -> Scene {
+    // ---------------- Texturas ----------------
     let mut textures: Vec<Texture> = Vec::new();
     let push = |t: Texture, textures: &mut Vec<Texture>| -> usize {
         textures.push(t);
@@ -34,6 +38,7 @@ pub fn build(seed: u32) -> Scene {
     let t_obs = push(texture::tex_obsidian(32), &mut textures);
     let t_glass = push(texture::tex_water(16), &mut textures);
 
+    // Mapas normales derivados de mapas de altura (filtro Sobel propio).
     let n_stone = texture::normal_from_height(&texture::tex_stone(32), 2.5);
     let n_stone = push(n_stone, &mut textures);
     let n_wood = texture::normal_from_height(&texture::tex_wood(32), 1.6);
@@ -41,28 +46,38 @@ pub fn build(seed: u32) -> Scene {
     let n_water = texture::normal_from_height(&texture::height_waves(32), 1.2);
     let n_water = push(n_water, &mut textures);
 
+    // ---------------- Materiales ----------------
+    // El indice dentro del vector DEBE coincidir con las constantes M_*.
     let materials = vec![
+        // 0 - pasto
         Material::opaque("pasto", t_grass).with_phong(0.95, 0.05, 8.0),
+        // 1 - tierra
         Material::opaque("tierra", t_dirt).with_phong(0.95, 0.03, 4.0),
+        // 2 - piedra (mapa normal)
         Material::opaque("piedra", t_stone)
             .with_phong(0.80, 0.20, 32.0)
             .with_normal_map(n_stone)
             .with_reflectivity(0.03),
+        // 3 - madera (mapa normal)
         Material::opaque("madera", t_wood)
             .with_phong(0.85, 0.15, 24.0)
             .with_normal_map(n_wood),
+        // 4 - agua (refraccion + reflexion + mapa normal de olas)
         Material::opaque("agua", t_water)
             .with_phong(0.15, 0.70, 180.0)
             .with_normal_map(n_water)
             .with_refraction(0.88, 1.33)
             .with_reflectivity(0.10)
             .with_albedo(v3(0.75, 0.92, 1.0)),
+        // 5 - lava (emisivo)
         Material::opaque("lava", t_lava)
             .with_phong(0.25, 0.05, 8.0)
             .with_emission(v3(1.0, 0.42, 0.10), 3.2),
+        // 6 - obsidiana pulida (reflexion)
         Material::opaque("obsidiana", t_obs)
             .with_phong(0.30, 0.55, 220.0)
             .with_reflectivity(0.65),
+        // 7 - vidrio (refraccion fuerte)
         Material::opaque("vidrio", t_glass)
             .with_phong(0.05, 0.60, 200.0)
             .with_refraction(0.92, 1.52)
@@ -70,12 +85,14 @@ pub fn build(seed: u32) -> Scene {
             .with_albedo(v3(0.88, 0.96, 0.92)),
     ];
 
-    let mut world = World::new();
+    // ---------------- Terreno procedural ----------------
+    // Rejilla densa reservada con margen para arboles y estructuras.
+    let mut world = World::new((-2, 0, -2), (SIZE + 3, 24, SIZE + 3));
 
     for x in 0..SIZE {
         for z in 0..SIZE {
             let n = fbm(x as f32 * 0.13, z as f32 * 0.13, 4, seed);
-            let h = 1 + (n * 6.0) as i32;
+            let h = 1 + (n * 6.0) as i32; // alturas entre 1 y 7
 
             for y in 0..=h {
                 let mat = if y == h {
@@ -92,12 +109,14 @@ pub fn build(seed: u32) -> Scene {
                 world.set(x, y, z, mat);
             }
 
+            // Lago: se rellena con agua todo lo que quede bajo el nivel del mar.
             for y in (h + 1)..=SEA_LEVEL {
                 world.set(x, y, z, M_WATER);
             }
         }
     }
 
+    // ---------------- Estructuras ----------------
     let top_of = |w: &World, x: i32, z: i32| -> i32 {
         let mut y = 12;
         while y >= 0 {
@@ -111,6 +130,7 @@ pub fn build(seed: u32) -> Scene {
         0
     };
 
+    // Cabana de madera con ventanas de vidrio sobre una plataforma de piedra.
     let (hx, hz) = (10, 3);
     let base = top_of(&world, hx, hz).max(SEA_LEVEL) + 1;
     for x in hx..hx + 5 {
@@ -120,7 +140,7 @@ pub fn build(seed: u32) -> Scene {
                     world.set(x, y, z, M_STONE);
                 }
             }
-            world.set(x, base, z, M_WOOD);
+            world.set(x, base, z, M_WOOD); // piso
         }
     }
     for y in base + 1..base + 4 {
@@ -137,10 +157,11 @@ pub fn build(seed: u32) -> Scene {
     }
     for x in hx..hx + 5 {
         for z in hz..hz + 4 {
-            world.set(x, base + 4, z, M_WOOD);
+            world.set(x, base + 4, z, M_WOOD); // techo
         }
     }
 
+    // Crater de lava (material emisivo) en una esquina.
     let (lx, lz) = (3, 12);
     let mut lava_center = v3(lx as f32 + 1.5, 6.0, lz as f32 + 1.5);
     for x in lx..lx + 3 {
@@ -153,6 +174,7 @@ pub fn build(seed: u32) -> Scene {
         }
     }
 
+    // Pilares de obsidiana pulida rematados con un bloque de lava (antorchas).
     let mut torches: Vec<Vec3> = Vec::new();
     for &(px, pz) in &[(6, 6), (13, 11), (2, 5)] {
         let t = top_of(&world, px, pz);
@@ -163,6 +185,7 @@ pub fn build(seed: u32) -> Scene {
         torches.push(v3(px as f32 + 0.5, (t + 5) as f32, pz as f32 + 0.5));
     }
 
+    // Arboles simples (tronco de madera + copa de pasto).
     for &(tx, tz) in &[(7, 13), (12, 14), (5, 9)] {
         let t = top_of(&world, tx, tz);
         if world.get(tx, t, tz) != Some(M_GRASS) {
@@ -179,6 +202,7 @@ pub fn build(seed: u32) -> Scene {
         world.set(tx, t + 5, tz, M_GRASS);
     }
 
+    // ---------------- Luces y cielo ----------------
     let sun_dir = v3(0.55, 0.72, 0.42).normalize();
     let mut lights = vec![
         Light {

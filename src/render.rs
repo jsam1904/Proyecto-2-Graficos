@@ -132,15 +132,20 @@ impl Scene {
             if ldir.dot(hit.normal) <= 0.0 {
                 continue;
             }
-            let s = self.shadow_factor(hit.point + hit.normal * EPS, ldir, dist - EPS);
-            if s.max_comp() <= 0.0 {
-                continue;
-            }
             let falloff = if l.attenuate {
                 1.0 / (1.0 + 0.010 * dist * dist)
             } else {
                 1.0
             };
+            // Si la luz aporta menos que el umbral, ni siquiera se lanza el
+            // rayo de sombra (las antorchas lejanas se descartan gratis).
+            if l.intensity * falloff * l.color.max_comp() < 0.012 {
+                continue;
+            }
+            let s = self.shadow_factor(hit.point + hit.normal * EPS, ldir, dist - EPS);
+            if s.max_comp() <= 0.0 {
+                continue;
+            }
             let radiance = l.color * (l.intensity * falloff) * s;
 
             let diff = n.dot(ldir).max(0.0);
