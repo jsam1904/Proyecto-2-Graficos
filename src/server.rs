@@ -82,7 +82,7 @@ fn handle(
             threads,
         };
 
-        let mut cam = Camera::new(center, get("dist", 26.0).clamp(6.0, 80.0));
+        let mut cam = Camera::new(center, get("dist", 32.0).clamp(6.0, 80.0));
         cam.yaw = get("yaw", 0.85);
         cam.pitch = get("pitch", 0.48).clamp(-1.35, 1.45);
 
@@ -147,7 +147,7 @@ const PAGE: &str = r#"<!doctype html>
 <script>
 const view = document.getElementById('view');
 const info = document.getElementById('info');
-const HOME = { yaw: 0.85, pitch: 0.48, dist: 26 };
+const HOME = { yaw: 0.85, pitch: 0.42, dist: 32 };
 
 // Resolucion base del frame final y factor para el modo movimiento.
 const FULL_W = 960, FULL_H = 540, DRAFT = 0.40;
@@ -217,7 +217,7 @@ window.addEventListener('pointerup', () => {
 });
 view.addEventListener('wheel', e => {
   e.preventDefault();
-  st.dist = Math.max(6, Math.min(70, st.dist + e.deltaY * 0.02));
+  st.dist = Math.max(8, Math.min(75, st.dist + e.deltaY * 0.02));
   moving = true; touch(); settle();
 }, { passive: false });
 window.addEventListener('keydown', e => {

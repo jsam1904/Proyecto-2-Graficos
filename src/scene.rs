@@ -1,4 +1,8 @@
-//! Construccion del diorama: materiales, terreno procedural y estructuras.
+//! Construccion del diorama de dos niveles:
+//!   - abajo el Nether (netherrack, lago de lava, glowstone en el techo)
+//!   - arriba el overworld (terreno procedural 16x16, lago, cabana, arboles)
+//! Los dos mundos estan separados por una capa de piedra, como en un diorama
+//! de corte: dos paredes traseras cerradas y dos lados abiertos para ver dentro.
 
 use crate::material::Material;
 use crate::noise::fbm;
@@ -17,9 +21,18 @@ pub const M_WATER: u8 = 4;
 pub const M_LAVA: u8 = 5;
 pub const M_OBSIDIAN: u8 = 6;
 pub const M_GLASS: u8 = 7;
+pub const M_NETHERRACK: u8 = 8;
+pub const M_GLOWSTONE: u8 = 9;
 
-pub const SIZE: i32 = 16; // area del terreno procedural: 16x16 cubos
-pub const SEA_LEVEL: i32 = 4;
+pub const SIZE: i32 = 16; // area procedural: 16x16 cubos por nivel
+pub const NETHER_ROOF: i32 = 7; // capa de piedra que separa los mundos
+pub const GROUND_BASE: i32 = 8; // primera capa del overworld
+pub const SEA_LEVEL: i32 = GROUND_BASE + 3;
+
+/// Punto al que mira la camara (entre los dos niveles).
+pub fn center() -> Vec3 {
+    v3(SIZE as f32 * 0.5, 6.5, SIZE as f32 * 0.5)
+}
 
 pub fn build(seed: u32) -> Scene {
     // ---------------- Texturas ----------------
@@ -37,18 +50,21 @@ pub fn build(seed: u32) -> Scene {
     let t_lava = push(texture::tex_lava(32), &mut textures);
     let t_obs = push(texture::tex_obsidian(32), &mut textures);
     let t_glass = push(texture::tex_water(16), &mut textures);
+    let t_nether = push(texture::tex_netherrack(32), &mut textures);
+    let t_glow = push(texture::tex_glowstone(32), &mut textures);
 
     // Mapas normales derivados de mapas de altura SUAVES (filtro Sobel propio).
-    // La fuerza se mantiene baja: valores altos hacen que la superficie hierva.
     let n_stone = texture::normal_from_height(&texture::height_blobs(32, 0.30, 77), 0.9);
     let n_stone = push(n_stone, &mut textures);
     let n_wood = texture::normal_from_height(&texture::height_planks(32), 0.7);
     let n_wood = push(n_wood, &mut textures);
     let n_water = texture::normal_from_height(&texture::height_waves(32), 0.45);
     let n_water = push(n_water, &mut textures);
+    let n_nether = texture::normal_from_height(&texture::height_blobs(32, 0.30, 131), 1.1);
+    let n_nether = push(n_nether, &mut textures);
 
     // ---------------- Materiales ----------------
-    // El indice dentro del vector DEBE coincidir con las constantes M_*.
+    // El indice DEBE coincidir con las constantes M_*.
     let materials = vec![
         // 0 - pasto
         Material::opaque("pasto", t_grass).with_phong(0.95, 0.05, 8.0),
@@ -84,18 +100,68 @@ pub fn build(seed: u32) -> Scene {
             .with_refraction(0.92, 1.52)
             .with_reflectivity(0.08)
             .with_albedo(v3(0.88, 0.96, 0.92)),
+        // 8 - netherrack (mapa normal, superficie rugosa y mate)
+        Material::opaque("netherrack", t_nether)
+            .with_phong(0.92, 0.06, 10.0)
+            .with_normal_map(n_nether),
+        // 9 - glowstone (emisivo)
+        Material::opaque("glowstone", t_glow)
+            .with_phong(0.35, 0.10, 16.0)
+            .with_emission(v3(1.0, 0.82, 0.42), 2.6),
     ];
 
-    // ---------------- Terreno procedural ----------------
-    // Rejilla densa reservada con margen para arboles y estructuras.
     let mut world = World::new((-2, 0, -2), (SIZE + 3, 24, SIZE + 3));
 
+    // ================= NIVEL INFERIOR: EL NETHER =================
+    for x in 0..SIZE {
+        for z in 0..SIZE {
+            world.set(x, 0, z, M_NETHERRACK); // piso
+
+            // Lago de lava excavado con ruido: donde el ruido es bajo, hay lava.
+            let n = fbm(x as f32 * 0.17, z as f32 * 0.17, 3, seed ^ 0xB00B);
+            if n < 0.44 {
+                world.set(x, 1, z, M_LAVA);
+            } else {
+                world.set(x, 1, z, M_NETHERRACK);
+                if n > 0.70 {
+                    world.set(x, 2, z, M_NETHERRACK); // relieve del terreno
+                }
+            }
+
+            // Techo del Nether y capa de piedra que separa los mundos.
+            world.set(x, NETHER_ROOF - 1, z, M_NETHERRACK);
+            world.set(x, NETHER_ROOF, z, M_STONE);
+        }
+    }
+
+    // Dos paredes traseras cerradas: el diorama se ve como casa de munecas.
+    for y in 1..NETHER_ROOF - 1 {
+        for i in 0..SIZE {
+            world.set(SIZE - 1, y, i, M_NETHERRACK);
+            world.set(i, y, SIZE - 1, M_NETHERRACK);
+        }
+    }
+
+    // Columnas de netherrack.
+    for &(cx, cz) in &[(4, 4), (11, 6), (6, 11)] {
+        for y in 2..NETHER_ROOF - 1 {
+            world.set(cx, y, cz, M_NETHERRACK);
+        }
+    }
+
+    // Glowstone colgando del techo (material emisivo que ilumina el Nether).
+    let glow_cells = [(3, 8), (12, 11), (8, 3)];
+    for &(gx, gz) in &glow_cells {
+        world.set(gx, NETHER_ROOF - 1, gz, M_GLOWSTONE);
+    }
+
+    // ================= NIVEL SUPERIOR: OVERWORLD =================
     for x in 0..SIZE {
         for z in 0..SIZE {
             let n = fbm(x as f32 * 0.13, z as f32 * 0.13, 4, seed);
-            let h = 1 + (n * 6.0) as i32; // alturas entre 1 y 7
+            let h = GROUND_BASE + 1 + (n * 5.0) as i32;
 
-            for y in 0..=h {
+            for y in GROUND_BASE..=h {
                 let mat = if y == h {
                     if h >= SEA_LEVEL {
                         M_GRASS
@@ -117,10 +183,10 @@ pub fn build(seed: u32) -> Scene {
         }
     }
 
-    // ---------------- Estructuras ----------------
+    // Devuelve la altura del bloque solido mas alto (ignorando el agua).
     let top_of = |w: &World, x: i32, z: i32| -> i32 {
-        let mut y = 12;
-        while y >= 0 {
+        let mut y = 22;
+        while y >= GROUND_BASE {
             if let Some(m) = w.get(x, y, z) {
                 if m != M_WATER {
                     return y;
@@ -128,15 +194,15 @@ pub fn build(seed: u32) -> Scene {
             }
             y -= 1;
         }
-        0
+        GROUND_BASE
     };
 
-    // Cabana de madera con ventanas de vidrio sobre una plataforma de piedra.
+    // Cabana de madera con ventanas de vidrio.
     let (hx, hz) = (10, 3);
     let base = top_of(&world, hx, hz).max(SEA_LEVEL) + 1;
     for x in hx..hx + 5 {
         for z in hz..hz + 4 {
-            for y in 0..base {
+            for y in GROUND_BASE..base {
                 if world.get(x, y, z).map_or(true, |m| m == M_WATER) {
                     world.set(x, y, z, M_STONE);
                 }
@@ -162,32 +228,37 @@ pub fn build(seed: u32) -> Scene {
         }
     }
 
-    // Crater de lava (material emisivo) en una esquina.
-    let (lx, lz) = (3, 12);
-    let mut lava_center = v3(lx as f32 + 1.5, 6.0, lz as f32 + 1.5);
-    for x in lx..lx + 3 {
-        for z in lz..lz + 3 {
-            let t = top_of(&world, x, z);
-            world.set(x, t, z, M_LAVA);
-            if x == lx + 1 && z == lz + 1 {
-                lava_center = v3(x as f32 + 0.5, t as f32 + 1.2, z as f32 + 0.5);
-            }
+    // Portal de obsidiana: el enlace visual entre los dos mundos.
+    let (px, pz) = (4, 9);
+    let pbase = top_of(&world, px, pz) + 1;
+    for y in pbase..pbase + 4 {
+        world.set(px, y, pz, M_OBSIDIAN);
+        world.set(px + 3, y, pz, M_OBSIDIAN);
+    }
+    for x in px..px + 4 {
+        world.set(x, pbase, pz, M_OBSIDIAN);
+        world.set(x, pbase + 4, pz, M_OBSIDIAN);
+    }
+    // Interior del portal: vidrio tenido de morado (refraccion).
+    for y in pbase + 1..pbase + 4 {
+        for x in px + 1..px + 3 {
+            world.set(x, y, pz, M_GLASS);
         }
     }
 
-    // Pilares de obsidiana pulida rematados con un bloque de lava (antorchas).
+    // Antorchas: pilares de obsidiana rematados con lava.
     let mut torches: Vec<Vec3> = Vec::new();
-    for &(px, pz) in &[(6, 6), (13, 11), (2, 5)] {
-        let t = top_of(&world, px, pz);
-        for y in t + 1..t + 4 {
-            world.set(px, y, pz, M_OBSIDIAN);
+    for &(tx, tz) in &[(13, 12), (7, 6)] {
+        let t = top_of(&world, tx, tz);
+        for y in t + 1..t + 3 {
+            world.set(tx, y, tz, M_OBSIDIAN);
         }
-        world.set(px, t + 4, pz, M_LAVA);
-        torches.push(v3(px as f32 + 0.5, (t + 5) as f32, pz as f32 + 0.5));
+        world.set(tx, t + 3, tz, M_LAVA);
+        torches.push(v3(tx as f32 + 0.5, (t + 4) as f32, tz as f32 + 0.5));
     }
 
-    // Arboles simples (tronco de madera + copa de pasto).
-    for &(tx, tz) in &[(7, 13), (12, 14), (5, 9)] {
+    // Arboles (tronco de madera + copa de hojas).
+    for &(tx, tz) in &[(7, 13), (12, 14), (5, 12)] {
         let t = top_of(&world, tx, tz);
         if world.get(tx, t, tz) != Some(M_GRASS) {
             continue;
@@ -205,20 +276,33 @@ pub fn build(seed: u32) -> Scene {
 
     // ---------------- Luces y cielo ----------------
     let sun_dir = v3(0.55, 0.72, 0.42).normalize();
-    let mut lights = vec![
-        Light {
-            pos: sun_dir * 400.0,
-            color: v3(1.0, 0.96, 0.88),
-            intensity: 1.45,
-            attenuate: false,
-        },
-        Light {
-            pos: lava_center,
-            color: v3(1.0, 0.45, 0.12),
+    let mut lights = vec![Light {
+        pos: sun_dir * 400.0,
+        color: v3(1.0, 0.96, 0.88),
+        intensity: 1.45,
+        attenuate: false,
+    }];
+
+    // Resplandor del lago de lava del Nether.
+    for &(lx, lz) in &[(5, 6), (11, 10)] {
+        lights.push(Light {
+            pos: v3(lx as f32 + 0.5, 2.4, lz as f32 + 0.5),
+            color: v3(1.0, 0.40, 0.10),
             intensity: 9.0,
             attenuate: true,
-        },
-    ];
+        });
+    }
+
+    // Luz de cada glowstone del techo.
+    for &(gx, gz) in &glow_cells {
+        lights.push(Light {
+            pos: v3(gx as f32 + 0.5, NETHER_ROOF as f32 - 1.6, gz as f32 + 0.5),
+            color: v3(1.0, 0.80, 0.40),
+            intensity: 7.0,
+            attenuate: true,
+        });
+    }
+
     for t in torches {
         lights.push(Light {
             pos: t,

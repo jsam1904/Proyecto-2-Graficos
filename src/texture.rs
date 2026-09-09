@@ -278,3 +278,34 @@ pub fn height_waves(n: usize) -> Texture {
     }
     t
 }
+
+/// Netherrack: rojo oscuro con grumos.
+pub fn tex_netherrack(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let f = fbm(x as f32 * 0.30, y as f32 * 0.30, 3, 131);
+            let grano = hash21(x as i32, y as i32, 137) * 0.07;
+            let mut c = v3(0.32, 0.07, 0.07).lerp(v3(0.55, 0.16, 0.13), f);
+            // Vetas mas oscuras.
+            if f < 0.32 {
+                c = c * 0.65;
+            }
+            t.set(x, y, c * (0.96 + grano));
+        }
+    }
+    t
+}
+
+/// Glowstone: amarillo caliente con nodulos brillantes.
+pub fn tex_glowstone(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let f = fbm(x as f32 * 0.35, y as f32 * 0.35, 3, 211);
+            let c = v3(0.60, 0.40, 0.12).lerp(v3(1.0, 0.86, 0.42), f);
+            t.set(x, y, c);
+        }
+    }
+    t
+}

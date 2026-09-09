@@ -28,7 +28,7 @@ use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::time::Instant;
-use vec3::{v3, Vec3};
+use vec3::Vec3;
 
 fn save_ppm(path: &str, w: usize, h: usize, buf: &[Vec3]) -> io::Result<()> {
     let file = File::create(path)?;
@@ -66,7 +66,7 @@ fn main() -> io::Result<()> {
     );
 
     fs::create_dir_all("out")?;
-    let center = v3(scene::SIZE as f32 * 0.5, 4.0, scene::SIZE as f32 * 0.5);
+    let center = scene::center();
 
     match mode.as_str() {
         "view" => {
@@ -87,7 +87,7 @@ fn main() -> io::Result<()> {
                 // Rotacion completa del diorama + acercamiento y alejamiento.
                 cam.yaw = t * std::f32::consts::TAU;
                 cam.pitch = 0.42 + 0.16 * (t * std::f32::consts::TAU).sin();
-                cam.dist = 30.0 - 11.0 * (t * std::f32::consts::TAU).cos();
+                cam.dist = 36.0 - 12.0 * (t * std::f32::consts::TAU).cos();
 
                 let buf = render::render_parallel(
                     &scene,
@@ -119,7 +119,7 @@ fn main() -> io::Result<()> {
             let h = arg(&args, 3, 720usize);
             let ss = arg(&args, 4, 2usize);
 
-            let mut cam = Camera::new(center, 26.0);
+            let mut cam = Camera::new(center, 32.0);
             cam.yaw = 0.85;
             cam.pitch = 0.48;
 
