@@ -1,3 +1,6 @@
+//! Texturas: generacion procedural, carga de PPM (P6) y mapas normales.
+//! No se usan librerias externas: el decodificador de PPM es propio.
+
 use crate::noise::{fbm, hash21, value_noise};
 use crate::vec3::{v3, Vec3};
 use std::fs;
@@ -28,6 +31,7 @@ impl Texture {
         self.data[y * self.w + x] = c;
     }
 
+    /// Muestreo "nearest" con repeticion (look de pixel-art tipo Minecraft).
     #[inline]
     pub fn sample(&self, u: f32, v: f32) -> Vec3 {
         let uu = u - u.floor();
@@ -37,15 +41,20 @@ impl Texture {
         self.get(x, y)
     }
 
+    /// Lee un texel de un mapa normal y lo pasa de [0,1] a [-1,1] (espacio tangente).
     #[inline]
     pub fn sample_normal(&self, u: f32, v: f32) -> Vec3 {
         let c = self.sample(u, v);
         v3(c.x * 2.0 - 1.0, c.y * 2.0 - 1.0, c.z * 2.0 - 1.0).normalize()
     }
 
+    /// Carga una imagen PPM binaria (P6, 8 bits). Convierte cualquier PNG/JPG con:
+    ///   ffmpeg -i textura.png -pix_fmt rgb24 textura.ppm
     pub fn from_ppm(path: &str) -> io::Result<Texture> {
         let bytes = fs::read(path)?;
         let mut pos = 0usize;
+
+        // Lee un token del encabezado saltando espacios y comentarios (#).
         let mut token = || -> Option<String> {
             while pos < bytes.len() {
                 if bytes[pos].is_ascii_whitespace() {
@@ -82,7 +91,7 @@ impl Texture {
             ));
         }
 
-        let start = pos + 1;
+        let start = pos + 1; // un unico separador despues del maxval
         let mut tex = Texture::new(w, h);
         for i in 0..w * h {
             let o = start + i * 3;
@@ -99,6 +108,7 @@ impl Texture {
     }
 }
 
+/// Deriva un mapa normal a partir de una textura de altura (usa el canal rojo, filtro Sobel).
 pub fn normal_from_height(height: &Texture, strength: f32) -> Texture {
     let mut out = Texture::new(height.w, height.h);
     let at = |x: i32, y: i32| -> f32 {
@@ -123,15 +133,19 @@ pub fn normal_from_height(height: &Texture, strength: f32) -> Texture {
     out
 }
 
+// ---------------------------------------------------------------------------
+// Texturas procedurales (una por material). Todas de 32x32 por defecto.
+// ---------------------------------------------------------------------------
+
 pub fn tex_grass(n: usize) -> Texture {
     let mut t = Texture::new(n, n);
     for y in 0..n {
         for x in 0..n {
-            let r = hash21(x as i32, y as i32, 11);
-            let f = fbm(x as f32 * 0.25, y as f32 * 0.25, 3, 5);
-            let base = v3(0.18, 0.45, 0.12).lerp(v3(0.34, 0.70, 0.22), f);
-            let c = base * (0.85 + 0.30 * r);
-            t.set(x, y, c);
+            // Manchas coherentes (no ruido por pixel) + un grano muy suave.
+            let f = fbm(x as f32 * 0.22, y as f32 * 0.22, 3, 5);
+            let grano = hash21(x as i32, y as i32, 11) * 0.06;
+            let base = v3(0.20, 0.44, 0.15).lerp(v3(0.33, 0.63, 0.22), f);
+            t.set(x, y, base * (0.97 + grano));
         }
     }
     t
@@ -141,25 +155,28 @@ pub fn tex_dirt(n: usize) -> Texture {
     let mut t = Texture::new(n, n);
     for y in 0..n {
         for x in 0..n {
-            let r = hash21(x as i32, y as i32, 23);
-            let c = v3(0.42, 0.28, 0.16) * (0.80 + 0.40 * r);
-            t.set(x, y, c);
+            let f = fbm(x as f32 * 0.28, y as f32 * 0.28, 3, 23);
+            let grano = hash21(x as i32, y as i32, 29) * 0.08;
+            let base = v3(0.36, 0.24, 0.14).lerp(v3(0.48, 0.33, 0.19), f);
+            t.set(x, y, base * (0.96 + grano));
         }
     }
     t
 }
 
+/// Piedra tipo "cobble": manchas grandes con juntas oscuras.
 pub fn tex_stone(n: usize) -> Texture {
     let mut t = Texture::new(n, n);
     for y in 0..n {
         for x in 0..n {
-            let blobs = value_noise(x as f32 * 0.18, y as f32 * 0.18, 77);
-            let grain = hash21(x as i32, y as i32, 91);
-            let mut g = 0.35 + 0.35 * blobs + 0.15 * grain;
-            if blobs > 0.46 && blobs < 0.52 {
-                g *= 0.45;
+            let blobs = value_noise(x as f32 * 0.30, y as f32 * 0.30, 77);
+            let grano = hash21(x as i32, y as i32, 91) * 0.05;
+            let mut g = 0.42 + 0.28 * blobs + grano;
+            // Junta oscura entre piedras (banda estrecha del ruido).
+            if (blobs - 0.5).abs() < 0.045 {
+                g *= 0.55;
             }
-            t.set(x, y, v3(g, g, g * 1.03));
+            t.set(x, y, v3(g, g, g * 1.04));
         }
     }
     t
@@ -170,11 +187,10 @@ pub fn tex_wood(n: usize) -> Texture {
     for y in 0..n {
         for x in 0..n {
             let plank = (y * 4 / n) as f32; // 4 tablas por cara
-            let veta = value_noise(x as f32 * 0.6, y as f32 * 0.15 + plank * 3.0, 41);
-            let mut c = v3(0.55, 0.36, 0.19).lerp(v3(0.38, 0.23, 0.11), veta);
-            // linea de separacion entre tablas
+            let veta = value_noise(x as f32 * 0.5, y as f32 * 0.12 + plank * 3.0, 41);
+            let mut c = v3(0.55, 0.36, 0.19).lerp(v3(0.40, 0.25, 0.12), veta);
             if (y * 4) % n < 2 {
-                c = c * 0.55;
+                c = c * 0.6; // linea de separacion entre tablas
             }
             t.set(x, y, c);
         }
@@ -182,12 +198,13 @@ pub fn tex_wood(n: usize) -> Texture {
     t
 }
 
+/// Agua/hielo: casi uniforme, el color real lo dan la refraccion y el reflejo.
 pub fn tex_water(n: usize) -> Texture {
     let mut t = Texture::new(n, n);
     for y in 0..n {
         for x in 0..n {
-            let f = fbm(x as f32 * 0.2, y as f32 * 0.2, 3, 17);
-            t.set(x, y, v3(0.62, 0.84, 0.95).lerp(v3(0.78, 0.93, 1.0), f));
+            let f = fbm(x as f32 * 0.16, y as f32 * 0.16, 2, 17);
+            t.set(x, y, v3(0.68, 0.86, 0.95).lerp(v3(0.80, 0.93, 1.0), f));
         }
     }
     t
@@ -210,14 +227,43 @@ pub fn tex_obsidian(n: usize) -> Texture {
     let mut t = Texture::new(n, n);
     for y in 0..n {
         for x in 0..n {
-            let f = fbm(x as f32 * 0.3, y as f32 * 0.3, 3, 61);
-            let c = v3(0.05, 0.03, 0.09).lerp(v3(0.16, 0.10, 0.26), f);
+            let f = fbm(x as f32 * 0.28, y as f32 * 0.28, 3, 61);
+            let c = v3(0.05, 0.03, 0.09).lerp(v3(0.15, 0.10, 0.24), f);
             t.set(x, y, c);
         }
     }
     t
 }
 
+/// Mapa de altura SUAVE. Los mapas normales se derivan de aqui, nunca de una
+/// textura con ruido por pixel: si no, cada texel apunta a otro lado y la
+/// superficie "hierve" al mover la camara.
+pub fn height_blobs(n: usize, freq: f32, seed: u32) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let h = fbm(x as f32 * freq, y as f32 * freq, 3, seed);
+            t.set(x, y, v3(h, h, h));
+        }
+    }
+    t
+}
+
+/// Mapa de altura de las tablas de madera (solo las juntas marcan relieve).
+pub fn height_planks(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let junta = if (y * 4) % n < 2 { 0.0 } else { 1.0 };
+            let veta = value_noise(x as f32 * 0.5, y as f32 * 0.12, 41) * 0.15;
+            let h = junta * 0.85 + veta;
+            t.set(x, y, v3(h, h, h));
+        }
+    }
+    t
+}
+
+/// Mapa de altura de olas para el agua.
 pub fn height_waves(n: usize) -> Texture {
     let mut t = Texture::new(n, n);
     for y in 0..n {

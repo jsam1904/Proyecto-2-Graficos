@@ -38,12 +38,13 @@ pub fn build(seed: u32) -> Scene {
     let t_obs = push(texture::tex_obsidian(32), &mut textures);
     let t_glass = push(texture::tex_water(16), &mut textures);
 
-    // Mapas normales derivados de mapas de altura (filtro Sobel propio).
-    let n_stone = texture::normal_from_height(&texture::tex_stone(32), 2.5);
+    // Mapas normales derivados de mapas de altura SUAVES (filtro Sobel propio).
+    // La fuerza se mantiene baja: valores altos hacen que la superficie hierva.
+    let n_stone = texture::normal_from_height(&texture::height_blobs(32, 0.30, 77), 0.9);
     let n_stone = push(n_stone, &mut textures);
-    let n_wood = texture::normal_from_height(&texture::tex_wood(32), 1.6);
+    let n_wood = texture::normal_from_height(&texture::height_planks(32), 0.7);
     let n_wood = push(n_wood, &mut textures);
-    let n_water = texture::normal_from_height(&texture::height_waves(32), 1.2);
+    let n_water = texture::normal_from_height(&texture::height_waves(32), 0.45);
     let n_water = push(n_water, &mut textures);
 
     // ---------------- Materiales ----------------
@@ -64,7 +65,7 @@ pub fn build(seed: u32) -> Scene {
             .with_normal_map(n_wood),
         // 4 - agua (refraccion + reflexion + mapa normal de olas)
         Material::opaque("agua", t_water)
-            .with_phong(0.15, 0.70, 180.0)
+            .with_phong(0.22, 0.45, 90.0)
             .with_normal_map(n_water)
             .with_refraction(0.88, 1.33)
             .with_reflectivity(0.10)
