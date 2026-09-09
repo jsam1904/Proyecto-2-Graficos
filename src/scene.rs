@@ -6,7 +6,7 @@
 
 use crate::material::Material;
 use crate::noise::fbm;
-use crate::render::{Light, Scene};
+use crate::render::{Fog, Light, Scene};
 use crate::sky::Sky;
 use crate::texture::{self, Texture};
 use crate::vec3::{v3, Vec3};
@@ -113,24 +113,31 @@ pub fn build(seed: u32) -> Scene {
     let mut world = World::new((-2, 0, -2), (SIZE + 3, 24, SIZE + 3));
 
     // ================= NIVEL INFERIOR: EL NETHER =================
+    // Invertido: el techo es un mar de lava pegado a la capa de piedra que
+    // separa los mundos, y el netherrack queda como piso.
     for x in 0..SIZE {
         for z in 0..SIZE {
-            world.set(x, 0, z, M_NETHERRACK); // piso
+            world.set(x, 0, z, M_NETHERRACK); // base del diorama
 
-            // Lago de lava excavado con ruido: donde el ruido es bajo, hay lava.
             let n = fbm(x as f32 * 0.17, z as f32 * 0.17, 3, seed ^ 0xB00B);
-            if n < 0.44 {
-                world.set(x, 1, z, M_LAVA);
-            } else {
+
+            // Relieve del piso.
+            if n > 0.56 {
                 world.set(x, 1, z, M_NETHERRACK);
-                if n > 0.70 {
-                    world.set(x, 2, z, M_NETHERRACK); // relieve del terreno
-                }
             }
 
-            // Techo del Nether y capa de piedra que separa los mundos.
-            world.set(x, NETHER_ROOF - 1, z, M_NETHERRACK);
-            world.set(x, NETHER_ROOF, z, M_STONE);
+            // Techo: lava donde el ruido es bajo, netherrack donde es alto.
+            if n < 0.46 {
+                world.set(x, NETHER_ROOF - 1, z, M_LAVA);
+                // Goterones colgando de las zonas mas profundas del mar de lava.
+                if n < 0.22 {
+                    world.set(x, NETHER_ROOF - 2, z, M_LAVA);
+                }
+            } else {
+                world.set(x, NETHER_ROOF - 1, z, M_NETHERRACK);
+            }
+
+            world.set(x, NETHER_ROOF, z, M_STONE); // capa que separa los mundos
         }
     }
 
@@ -142,17 +149,35 @@ pub fn build(seed: u32) -> Scene {
         }
     }
 
-    // Columnas de netherrack.
+    // Columnas de netherrack que suben del piso hasta el mar de lava.
     for &(cx, cz) in &[(4, 4), (11, 6), (6, 11)] {
-        for y in 2..NETHER_ROOF - 1 {
+        for y in 1..NETHER_ROOF - 1 {
             world.set(cx, y, cz, M_NETHERRACK);
         }
     }
 
-    // Glowstone colgando del techo (material emisivo que ilumina el Nether).
+    // Portal de obsidiana en la pared del fondo del Nether (plano z = SIZE-1).
+    let np_x = 6;
+    let np_z = SIZE - 1;
+    for y in 1..6 {
+        world.set(np_x, y, np_z, M_OBSIDIAN);
+        world.set(np_x + 3, y, np_z, M_OBSIDIAN);
+    }
+    for x in np_x..np_x + 4 {
+        world.set(x, 1, np_z, M_OBSIDIAN);
+        world.set(x, 5, np_z, M_OBSIDIAN);
+    }
+    for y in 2..5 {
+        for x in np_x + 1..np_x + 3 {
+            world.set(x, y, np_z, M_GLASS); // interior refractante
+        }
+    }
+
+    // Glowstone incrustado en el piso: ilumina desde abajo, ahora que el
+    // techo lo ocupa la lava.
     let glow_cells = [(3, 8), (12, 11), (8, 3)];
     for &(gx, gz) in &glow_cells {
-        world.set(gx, NETHER_ROOF - 1, gz, M_GLOWSTONE);
+        world.set(gx, 1, gz, M_GLOWSTONE);
     }
 
     // ================= NIVEL SUPERIOR: OVERWORLD =================
@@ -283,20 +308,20 @@ pub fn build(seed: u32) -> Scene {
         attenuate: false,
     }];
 
-    // Resplandor del lago de lava del Nether.
+    // Resplandor del mar de lava del techo del Nether.
     for &(lx, lz) in &[(5, 6), (11, 10)] {
         lights.push(Light {
-            pos: v3(lx as f32 + 0.5, 2.4, lz as f32 + 0.5),
+            pos: v3(lx as f32 + 0.5, NETHER_ROOF as f32 - 2.2, lz as f32 + 0.5),
             color: v3(1.0, 0.40, 0.10),
             intensity: 9.0,
             attenuate: true,
         });
     }
 
-    // Luz de cada glowstone del techo.
+    // Luz de cada glowstone del piso.
     for &(gx, gz) in &glow_cells {
         lights.push(Light {
-            pos: v3(gx as f32 + 0.5, NETHER_ROOF as f32 - 1.6, gz as f32 + 0.5),
+            pos: v3(gx as f32 + 0.5, 2.1, gz as f32 + 0.5),
             color: v3(1.0, 0.80, 0.40),
             intensity: 7.0,
             attenuate: true,
@@ -327,5 +352,13 @@ pub fn build(seed: u32) -> Scene {
         lights,
         sky,
         ambient: Vec3::splat(0.12) * v3(0.9, 1.0, 1.2),
+        // Sin cielo debajo de la capa de piedra: el Nether queda contra un
+        // fondo rojo muy oscuro en vez del azul del overworld.
+        fog: Some(Fog {
+            center: center(),
+            level: NETHER_ROOF as f32 + 0.7,
+            thickness: 1.8,
+            color: v3(0.05, 0.015, 0.015),
+        }),
     }
 }

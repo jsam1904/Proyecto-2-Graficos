@@ -3,7 +3,12 @@
 //! Uso:
 //!   cargo run --release -- view    [puerto]
 //!   cargo run --release -- still   [ancho] [alto] [supersampling]
-//!   cargo run --release -- animate [ancho] [alto] [frames] [supersampling]
+//!   cargo run --release -- animate [ancho] [alto] [frames] [supersampling] [movimiento]
+//!
+//! `movimiento` define el recorrido de la camara:
+//!   vertical - sube desde el Nether hasta la vista aerea del overworld (default)
+//!   orbit    - vuelta completa alrededor del diorama
+//!   combo    - vuelta completa mientras sube y baja
 //!
 //! `view` abre un visor interactivo en el navegador (mouse + teclado).
 //! `still` guarda out/diorama.bmp y out/diorama.ppm.
@@ -28,7 +33,7 @@ use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::time::Instant;
-use vec3::Vec3;
+use vec3::{v3, Vec3};
 
 fn save_ppm(path: &str, w: usize, h: usize, buf: &[Vec3]) -> io::Result<()> {
     let file = File::create(path)?;
@@ -75,50 +80,74 @@ fn main() -> io::Result<()> {
             server::serve(&scene, center, &addr, threads)?;
         }
         "animate" => {
-            let w = arg(&args, 2, 800usize);
-            let h = arg(&args, 3, 450usize);
+            let w = arg(&args, 2, 960usize);
+            let h = arg(&args, 3, 540usize);
             let frames = arg(&args, 4, 240usize);
-            let ss = arg(&args, 5, 1usize);
+            let ss = arg(&args, 5, 2usize);
+            let mov = args.get(6).cloned().unwrap_or_else(|| "vertical".to_string());
 
+            let opts = RenderOpts {
+                samples: ss,
+                max_depth: render::MAX_DEPTH,
+                threads,
+            };
+
+            let cx = scene::SIZE as f32 * 0.5;
             let t0 = Instant::now();
+
             for f in 0..frames {
                 let t = f as f32 / frames as f32;
                 let ang = t * std::f32::consts::TAU;
-                let mut cam = Camera::new(center, 0.0);
-                // Una vuelta completa. La altura baja hasta casi el nivel del
-                // suelo para que se vea el Nether por los lados abiertos, y la
-                // distancia hace dos acercamientos por vuelta sin alejarse tanto
-                // que el diorama quede diminuto.
-                cam.yaw = ang;
-                cam.pitch = 0.30 + 0.17 * ang.sin();
-                cam.dist = 27.0 - 5.0 * (ang * 2.0).cos();
+                // Curva suave 0 -> 1 -> 0 que cierra el ciclo sin saltos.
+                let k = 0.5 - 0.5 * ang.cos();
 
-                let buf = render::render_parallel(
-                    &scene,
-                    &cam,
-                    w,
-                    h,
-                    RenderOpts {
-                        samples: ss,
-                        max_depth: render::MAX_DEPTH,
-                        threads,
-                    },
-                );
+                let mut cam = Camera::new(center, 26.0);
+
+                match mov.as_str() {
+                    "orbit" => {
+                        // Vuelta completa alrededor del diorama.
+                        cam.yaw = ang;
+                        cam.pitch = 0.30 + 0.17 * ang.sin();
+                        cam.dist = 27.0 - 5.0 * (ang * 2.0).cos();
+                    }
+                    "combo" => {
+                        // Vuelta completa mientras la camara sube y baja.
+                        cam.yaw = ang;
+                        cam.center = v3(cx, 3.2 + 7.6 * k, cx);
+                        cam.pitch = -0.05 + 1.15 * k;
+                        cam.dist = 27.0 - 4.0 * (k * std::f32::consts::PI).sin();
+                    }
+                    _ => {
+                        // VERTICAL: arranca a la altura del Nether, mirandolo de
+                        // frente por el lado abierto, y sube hasta la vista aerea
+                        // del overworld. Gira apenas para que no quede plano.
+                        cam.yaw = 0.85 + 0.9 * k;
+                        cam.center = v3(cx, 3.2 + 7.6 * k, cx);
+                        cam.pitch = -0.05 + 1.15 * k;
+                        cam.dist = 26.0 - 4.0 * (k * std::f32::consts::PI).sin();
+                    }
+                }
+
+                let buf = render::render_parallel(&scene, &cam, w, h, opts);
                 save_ppm(&format!("out/frame_{:04}.ppm", f), w, h, &buf)?;
+
                 println!(
-                    "frame {}/{}  dist={:.1}  ({:.1}s totales)",
+                    "frame {}/{}  altura={:.1}  pitch={:.2}  ({:.1}s totales)",
                     f + 1,
                     frames,
-                    cam.dist,
+                    cam.eye().y,
+                    cam.pitch,
                     t0.elapsed().as_secs_f32()
                 );
             }
+
             println!(
-                "\nListo ({} frames = {:.1}s a 30 fps). Arma el video con:\n  \
+                "\nListo ({} frames = {:.1}s a 30 fps, movimiento '{}'). Arma el video con:\n  \
                  ffmpeg -framerate 30 -i out/frame_%04d.ppm -c:v libx264 \
                  -crf 18 -pix_fmt yuv420p diorama.mp4",
                 frames,
-                frames as f32 / 30.0
+                frames as f32 / 30.0,
+                mov
             );
         }
         _ => {

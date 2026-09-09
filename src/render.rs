@@ -41,6 +41,19 @@ impl Default for RenderOpts {
     }
 }
 
+/// Niebla por altura: por debajo de `level` el fondo deja de ser el cielo y
+/// pasa a ser un color plano. Sirve para que el Nether no tenga cielo azul
+/// detras por los lados abiertos del diorama.
+pub struct Fog {
+    /// Punto de referencia (el centro del diorama).
+    pub center: Vec3,
+    /// Altura por debajo de la cual el fondo es niebla.
+    pub level: f32,
+    /// Cuantas unidades dura la transicion entre cielo y niebla.
+    pub thickness: f32,
+    pub color: Vec3,
+}
+
 pub struct Scene {
     pub world: World,
     pub materials: Vec<Material>,
@@ -48,9 +61,25 @@ pub struct Scene {
     pub lights: Vec<Light>,
     pub sky: Sky,
     pub ambient: Vec3,
+    pub fog: Option<Fog>,
 }
 
 impl Scene {
+    /// Color de fondo para un rayo que se escapa de la escena.
+    fn background(&self, ro: Vec3, rd: Vec3) -> Vec3 {
+        let sky = self.sky.sample(rd);
+        match &self.fog {
+            None => sky,
+            Some(f) => {
+                // Altura del rayo al pasar por el plano del centro del diorama.
+                let t_ref = (f.center - ro).len().max(1.0);
+                let y = ro.y + rd.y * t_ref;
+                let k = ((f.level - y) / f.thickness).clamp(0.0, 1.0);
+                sky.lerp(f.color, k)
+            }
+        }
+    }
+
     fn material(&self, id: u8) -> &Material {
         &self.materials[id as usize]
     }
@@ -104,7 +133,7 @@ impl Scene {
     ) -> Vec3 {
         let hit = match self.world.traverse(ro, rd, T_MAX, inside) {
             Some(h) => h,
-            None => return self.sky.sample(rd),
+            None => return self.background(ro, rd),
         };
 
         let m = self.material(hit.mat);
