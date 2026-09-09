@@ -1,3 +1,6 @@
+//! Skybox. Dos modos: procedural (gradiente + sol + nubes) o panorama
+//! equirectangular cargado desde un PPM.
+
 use crate::noise::fbm;
 use crate::texture::Texture;
 use crate::vec3::Vec3;
@@ -14,6 +17,7 @@ pub enum Sky {
 }
 
 impl Sky {
+    /// Color del cielo en la direccion `d` (normalizada).
     pub fn sample(&self, d: Vec3) -> Vec3 {
         match self {
             Sky::Procedural {
@@ -27,9 +31,10 @@ impl Sky {
                 let mut c = if t >= 0.0 {
                     horizon.lerp(*zenith, t.powf(0.6))
                 } else {
-                    horizon.lerp(*ground, (-t).powf(0.35))
+                    horizon.lerp(*ground, (-t).powf(0.75))
                 };
 
+                // Nubes: fBm proyectado sobre el hemisferio superior.
                 if t > 0.02 {
                     let s = 1.0 / t.max(0.05);
                     let n = fbm(d.x * s * 0.45 + 12.0, d.z * s * 0.45 + 4.0, 4, 909);
@@ -37,6 +42,7 @@ impl Sky {
                     c = c.lerp(Vec3::splat(1.05), cloud * 0.75);
                 }
 
+                // Disco solar + halo.
                 let cos_sun = d.dot(*sun_dir).max(0.0);
                 c += *sun_color * cos_sun.powf(900.0) * 12.0;
                 c += *sun_color * cos_sun.powf(24.0) * 0.25;

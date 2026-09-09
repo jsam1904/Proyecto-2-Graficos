@@ -77,17 +77,21 @@ fn main() -> io::Result<()> {
         "animate" => {
             let w = arg(&args, 2, 800usize);
             let h = arg(&args, 3, 450usize);
-            let frames = arg(&args, 4, 120usize);
+            let frames = arg(&args, 4, 240usize);
             let ss = arg(&args, 5, 1usize);
 
             let t0 = Instant::now();
             for f in 0..frames {
                 let t = f as f32 / frames as f32;
+                let ang = t * std::f32::consts::TAU;
                 let mut cam = Camera::new(center, 0.0);
-                // Rotacion completa del diorama + acercamiento y alejamiento.
-                cam.yaw = t * std::f32::consts::TAU;
-                cam.pitch = 0.42 + 0.16 * (t * std::f32::consts::TAU).sin();
-                cam.dist = 36.0 - 12.0 * (t * std::f32::consts::TAU).cos();
+                // Una vuelta completa. La altura baja hasta casi el nivel del
+                // suelo para que se vea el Nether por los lados abiertos, y la
+                // distancia hace dos acercamientos por vuelta sin alejarse tanto
+                // que el diorama quede diminuto.
+                cam.yaw = ang;
+                cam.pitch = 0.30 + 0.17 * ang.sin();
+                cam.dist = 27.0 - 5.0 * (ang * 2.0).cos();
 
                 let buf = render::render_parallel(
                     &scene,
@@ -110,8 +114,11 @@ fn main() -> io::Result<()> {
                 );
             }
             println!(
-                "\nListo. Arma el video con:\n  ffmpeg -framerate 30 -i out/frame_%04d.ppm \
-                 -c:v libx264 -pix_fmt yuv420p diorama.mp4"
+                "\nListo ({} frames = {:.1}s a 30 fps). Arma el video con:\n  \
+                 ffmpeg -framerate 30 -i out/frame_%04d.ppm -c:v libx264 \
+                 -crf 18 -pix_fmt yuv420p diorama.mp4",
+                frames,
+                frames as f32 / 30.0
             );
         }
         _ => {

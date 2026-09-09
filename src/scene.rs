@@ -313,9 +313,9 @@ pub fn build(seed: u32) -> Scene {
     }
 
     let sky = Sky::Procedural {
-        zenith: v3(0.16, 0.33, 0.72),
-        horizon: v3(0.70, 0.80, 0.94),
-        ground: v3(0.22, 0.20, 0.18),
+        zenith: v3(0.10, 0.28, 0.78),
+        horizon: v3(0.55, 0.72, 0.95),
+        ground: v3(0.09, 0.11, 0.15),
         sun_dir,
         sun_color: v3(1.0, 0.90, 0.72),
     };
