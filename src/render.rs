@@ -1,3 +1,5 @@
+//! Motor de raytracing: sombreado, sombras, reflexion, refraccion y paralelismo.
+
 use crate::camera::Camera;
 use crate::material::{fresnel_schlick, tangent_frame, Material};
 use crate::sky::Sky;
@@ -5,6 +7,7 @@ use crate::texture::Texture;
 use crate::vec3::Vec3;
 use crate::world::World;
 
+/// Profundidad de rebotes para el render final.
 pub const MAX_DEPTH: u32 = 3;
 const T_MAX: f32 = 1.0e4;
 const EPS: f32 = 1.0e-3;
@@ -13,7 +16,29 @@ pub struct Light {
     pub pos: Vec3,
     pub color: Vec3,
     pub intensity: f32,
+    /// false = luz tipo sol (sin caida por distancia).
     pub attenuate: bool,
+}
+
+/// Parametros de calidad del render. Bajarlos da frames rapidos para
+/// la vista interactiva; subirlos da la calidad final.
+#[derive(Clone, Copy)]
+pub struct RenderOpts {
+    /// Supersampling NxN por pixel (antialiasing).
+    pub samples: usize,
+    /// Rebotes maximos de reflexion/refraccion.
+    pub max_depth: u32,
+    pub threads: usize,
+}
+
+impl Default for RenderOpts {
+    fn default() -> RenderOpts {
+        RenderOpts {
+            samples: 2,
+            max_depth: MAX_DEPTH,
+            threads: 4,
+        }
+    }
 }
 
 pub struct Scene {
@@ -37,6 +62,8 @@ impl Scene {
         }
     }
 
+    /// Factor de sombra. Devuelve Vec3::ONE si no hay oclusion; los materiales
+    /// transparentes dejan pasar luz tintada en vez de bloquearla del todo.
     fn shadow_factor(&self, origin: Vec3, dir: Vec3, dist: f32) -> Vec3 {
         let mut atten = Vec3::ONE;
         let mut o = origin;
@@ -66,7 +93,15 @@ impl Scene {
         atten
     }
 
-    pub fn trace(&self, ro: Vec3, rd: Vec3, depth: u32, inside: Option<u8>) -> Vec3 {
+    /// Traza un rayo y devuelve el color radiante.
+    pub fn trace(
+        &self,
+        ro: Vec3,
+        rd: Vec3,
+        depth: u32,
+        inside: Option<u8>,
+        max_depth: u32,
+    ) -> Vec3 {
         let hit = match self.world.traverse(ro, rd, T_MAX, inside) {
             Some(h) => h,
             None => return self.sky.sample(rd),
@@ -75,6 +110,7 @@ impl Scene {
         let m = self.material(hit.mat);
         let base = self.tex_color(m, hit.u, hit.v);
 
+        // --- Mapa normal en espacio tangente -------------------------------
         let mut n = hit.normal;
         if let Some(nm) = m.normal_map {
             let (tan, bitan) = tangent_frame(hit.normal);
@@ -85,6 +121,7 @@ impl Scene {
         let view = -rd;
         let mut local = base * self.ambient;
 
+        // --- Iluminacion directa (Blinn-Phong + sombras) --------------------
         for l in &self.lights {
             let to_l = l.pos - hit.point;
             let dist = to_l.len();
@@ -114,12 +151,14 @@ impl Scene {
             local += radiance * (spec * m.ks);
         }
 
+        // --- Emision (material emisivo) ------------------------------------
         local += m.emission;
 
-        if depth >= MAX_DEPTH {
+        if depth >= max_depth {
             return local;
         }
 
+        // --- Reflexion y refraccion con Fresnel ----------------------------
         let mut kr = m.reflectivity;
         let mut kt = 0.0;
 
@@ -134,10 +173,12 @@ impl Scene {
 
         if kr > 0.01 {
             let rdir = rd.reflect(n).normalize();
-            color += self.trace(hit.point + n * EPS, rdir, depth + 1, None) * kr;
+            color += self.trace(hit.point + n * EPS, rdir, depth + 1, None, max_depth) * kr;
         }
 
         if kt > 0.01 {
+            // El rayo entra al medio: eta = 1 / ior. Al viajar dentro se ignora
+            // ese material para no refractar en cada celda vecina del mismo bloque.
             match rd.refract(n, 1.0 / m.ior) {
                 Some(tdir) => {
                     let tdir = tdir.normalize();
@@ -146,11 +187,14 @@ impl Scene {
                         tdir,
                         depth + 1,
                         Some(hit.mat),
+                        max_depth,
                     ) * kt;
                 }
                 None => {
+                    // Reflexion interna total.
                     let rdir = rd.reflect(n).normalize();
-                    color += self.trace(hit.point + n * EPS, rdir, depth + 1, None) * kt;
+                    color +=
+                        self.trace(hit.point + n * EPS, rdir, depth + 1, None, max_depth) * kt;
                 }
             }
         }
@@ -159,22 +203,24 @@ impl Scene {
     }
 }
 
+/// Render paralelo con hilos de la biblioteca estandar (sin rayon).
+/// Cada hilo recibe una franja contigua del framebuffer, asi no hay locks.
 pub fn render_parallel(
     scene: &Scene,
     cam: &Camera,
     w: usize,
     h: usize,
-    samples: usize,
-    threads: usize,
+    opts: RenderOpts,
 ) -> Vec<Vec3> {
     let mut buf = vec![Vec3::ZERO; w * h];
-    let threads = threads.max(1);
+    let threads = opts.threads.max(1);
     let rows_per_chunk = ((h + threads - 1) / threads).max(1);
     let aspect = w as f32 / h as f32;
     let eye = cam.eye();
     let basis = cam.basis();
-    let ss = samples.max(1);
+    let ss = opts.samples.max(1);
     let inv_ss = 1.0 / (ss * ss) as f32;
+    let max_depth = opts.max_depth;
 
     std::thread::scope(|s| {
         for (chunk_idx, chunk) in buf.chunks_mut(rows_per_chunk * w).enumerate() {
@@ -185,15 +231,15 @@ pub fn render_parallel(
                     let x = i % w;
                     let y = y0 + i / w;
                     let mut acc = Vec3::ZERO;
+                    // Supersampling en rejilla ss x ss (antialiasing).
                     for sy in 0..ss {
                         for sx in 0..ss {
                             let ox = (sx as f32 + 0.5) / ss as f32;
                             let oy = (sy as f32 + 0.5) / ss as f32;
-                            let ndc_x =
-                                (2.0 * (x as f32 + ox) / w as f32 - 1.0) * aspect;
+                            let ndc_x = (2.0 * (x as f32 + ox) / w as f32 - 1.0) * aspect;
                             let ndc_y = 1.0 - 2.0 * (y as f32 + oy) / h as f32;
                             let dir = cam.ray(ndc_x, ndc_y, &basis);
-                            acc += scene.trace(eye, dir, 0, None);
+                            acc += scene.trace(eye, dir, 0, None, max_depth);
                         }
                     }
                     *px = acc * inv_ss;

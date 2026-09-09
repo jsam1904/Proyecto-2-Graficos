@@ -23,6 +23,7 @@ mod vec3;
 mod world;
 
 use camera::Camera;
+use render::RenderOpts;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
@@ -88,7 +89,17 @@ fn main() -> io::Result<()> {
                 cam.pitch = 0.42 + 0.16 * (t * std::f32::consts::TAU).sin();
                 cam.dist = 30.0 - 11.0 * (t * std::f32::consts::TAU).cos();
 
-                let buf = render::render_parallel(&scene, &cam, w, h, ss, threads);
+                let buf = render::render_parallel(
+                    &scene,
+                    &cam,
+                    w,
+                    h,
+                    RenderOpts {
+                        samples: ss,
+                        max_depth: render::MAX_DEPTH,
+                        threads,
+                    },
+                );
                 save_ppm(&format!("out/frame_{:04}.ppm", f), w, h, &buf)?;
                 println!(
                     "frame {}/{}  dist={:.1}  ({:.1}s totales)",
@@ -113,7 +124,17 @@ fn main() -> io::Result<()> {
             cam.pitch = 0.48;
 
             let t0 = Instant::now();
-            let buf = render::render_parallel(&scene, &cam, w, h, ss, threads);
+            let buf = render::render_parallel(
+                &scene,
+                &cam,
+                w,
+                h,
+                RenderOpts {
+                    samples: ss,
+                    max_depth: render::MAX_DEPTH,
+                    threads,
+                },
+            );
             println!("Render en {:.2}s", t0.elapsed().as_secs_f32());
             save_ppm("out/diorama.ppm", w, h, &buf)?;
             bmp::save_bmp("out/diorama.bmp", w, h, &buf)?;
