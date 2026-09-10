@@ -313,7 +313,7 @@ pub fn tex_netherrack(n: usize) -> Texture {
         for x in 0..n {
             let f = fbm(x as f32 * 0.30, y as f32 * 0.30, 3, 131);
             let grano = hash21(x as i32, y as i32, 137) * 0.07;
-            let mut c = v3(0.32, 0.07, 0.07).lerp(v3(0.55, 0.16, 0.13), f);
+            let mut c = v3(0.17, 0.035, 0.035).lerp(v3(0.33, 0.085, 0.065), f);
             // Vetas mas oscuras.
             if f < 0.32 {
                 c = c * 0.65;

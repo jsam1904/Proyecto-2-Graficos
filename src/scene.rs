@@ -30,7 +30,7 @@ pub const M_LEAVES: u8 = 12;
 pub const SIZE: i32 = 16; // area procedural: 16x16 cubos por nivel
 pub const NETHER_ROOF: i32 = 7; // capa de piedra que separa los mundos
 pub const GROUND_BASE: i32 = 8; // primera capa del overworld
-pub const SEA_LEVEL: i32 = GROUND_BASE + 3;
+pub const SEA_LEVEL: i32 = GROUND_BASE + 4;
 
 /// Punto al que mira la camara (entre los dos niveles).
 pub fn center() -> Vec3 {
@@ -113,7 +113,7 @@ pub fn build(seed: u32) -> Scene {
             .with_albedo(v3(0.88, 0.96, 0.92)),
         // 8 - netherrack (mapa normal, superficie rugosa y mate)
         Material::opaque("netherrack", t_nether)
-            .with_phong(0.92, 0.06, 10.0)
+            .with_phong(0.70, 0.05, 10.0)
             .with_normal_map(n_nether),
         // 9 - glowstone (emisivo)
         Material::opaque("glowstone", t_glow)
@@ -389,13 +389,13 @@ pub fn build(seed: u32) -> Scene {
         lights,
         sky,
         ambient: Vec3::splat(0.12) * v3(0.9, 1.0, 1.2),
-        // Sin cielo debajo de la capa de piedra: el Nether queda contra un
-        // fondo rojo muy oscuro en vez del azul del overworld.
+        // Caja que cubre el hueco del Nether: los rayos que lo atraviesan sin
+        // chocar nada se ven rojo muy oscuro en vez de cielo azul.
         fog: Some(Fog {
-            center: center(),
-            level: NETHER_ROOF as f32 + 0.7,
-            thickness: 3.5,
-            color: v3(0.05, 0.015, 0.015),
+            min: v3(-1.0, 0.0, -1.0),
+            max: v3(SIZE as f32 + 1.0, NETHER_ROOF as f32, SIZE as f32 + 1.0),
+            density: 0.45,
+            color: v3(0.040, 0.010, 0.010),
         }),
     }
 }

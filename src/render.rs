@@ -41,16 +41,18 @@ impl Default for RenderOpts {
     }
 }
 
-/// Niebla por altura: por debajo de `level` el fondo deja de ser el cielo y
-/// pasa a ser un color plano. Sirve para que el Nether no tenga cielo azul
-/// detras por los lados abiertos del diorama.
+/// Niebla encerrada en una caja: un rayo que escapa sin chocar nada se tine de
+/// `color` en proporcion a cuanto recorrio DENTRO de la caja.
+///
+/// Antes esto se hacia por altura evaluada a distancia fija, lo que pintaba un
+/// manchon circular detras del diorama en las tomas aereas. Con la caja, solo
+/// se tinen los rayos que de verdad atraviesan el hueco del Nether, asi que el
+/// interior se ve oscuro y el cielo del overworld queda intacto.
 pub struct Fog {
-    /// Punto de referencia (el centro del diorama).
-    pub center: Vec3,
-    /// Altura por debajo de la cual el fondo es niebla.
-    pub level: f32,
-    /// Cuantas unidades dura la transicion entre cielo y niebla.
-    pub thickness: f32,
+    pub min: Vec3,
+    pub max: Vec3,
+    /// Cuanto tine cada unidad recorrida dentro de la caja.
+    pub density: f32,
     pub color: Vec3,
 }
 
@@ -68,16 +70,43 @@ impl Scene {
     /// Color de fondo para un rayo que se escapa de la escena.
     fn background(&self, ro: Vec3, rd: Vec3) -> Vec3 {
         let sky = self.sky.sample(rd);
-        match &self.fog {
-            None => sky,
-            Some(f) => {
-                // Altura del rayo al pasar por el plano del centro del diorama.
-                let t_ref = (f.center - ro).len().max(1.0);
-                let y = ro.y + rd.y * t_ref;
-                let k = ((f.level - y) / f.thickness).clamp(0.0, 1.0);
-                sky.lerp(f.color, k)
+        let f = match &self.fog {
+            Some(f) => f,
+            None => return sky,
+        };
+
+        // Slab test contra la caja de niebla.
+        let o = [ro.x, ro.y, ro.z];
+        let d = [rd.x, rd.y, rd.z];
+        let lo = [f.min.x, f.min.y, f.min.z];
+        let hi = [f.max.x, f.max.y, f.max.z];
+        let mut t0 = 0.0f32;
+        let mut t1 = f32::INFINITY;
+
+        for i in 0..3 {
+            if d[i].abs() < 1e-9 {
+                if o[i] < lo[i] || o[i] > hi[i] {
+                    return sky;
+                }
+                continue;
+            }
+            let inv = 1.0 / d[i];
+            let mut ta = (lo[i] - o[i]) * inv;
+            let mut tb = (hi[i] - o[i]) * inv;
+            if ta > tb {
+                std::mem::swap(&mut ta, &mut tb);
+            }
+            t0 = t0.max(ta);
+            t1 = t1.min(tb);
+            if t0 >= t1 {
+                return sky;
             }
         }
+
+        // Cuanto recorrio el rayo dentro de la caja.
+        let recorrido = (t1 - t0).max(0.0);
+        let k = (recorrido * f.density).clamp(0.0, 1.0);
+        sky.lerp(f.color, k)
     }
 
     fn material(&self, id: u8) -> &Material {

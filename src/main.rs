@@ -113,10 +113,15 @@ fn main() -> io::Result<()> {
                     }
                     "combo" => {
                         // Vuelta completa mientras la camara sube y baja.
+                        // Encuadre: abajo hace falta MAS distancia (el diorama
+                        // mide ~17 de alto y no cabia); arriba hace falta menos
+                        // (visto en planta solo mide 16x16). El pitch maximo se
+                        // queda en 0.95 rad para que en el apice todavia se
+                        // vea el corte lateral del Nether.
                         cam.yaw = ang;
-                        cam.center = v3(cx, 3.0 + 7.0 * k, cx);
-                        cam.pitch = 0.02 + 1.13 * k;
-                        cam.dist = 26.0 + 9.0 * k;
+                        cam.center = v3(cx, 4.5 + 4.0 * k, cx);
+                        cam.pitch = 0.06 + 0.89 * k;
+                        cam.dist = 33.0 - 5.0 * k;
                     }
                     _ => {
                         // VERTICAL: arranca a la altura del Nether, mirando de
