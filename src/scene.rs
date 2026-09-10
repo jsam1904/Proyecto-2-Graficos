@@ -23,6 +23,7 @@ pub const M_OBSIDIAN: u8 = 6;
 pub const M_GLASS: u8 = 7;
 pub const M_NETHERRACK: u8 = 8;
 pub const M_GLOWSTONE: u8 = 9;
+pub const M_PORTAL: u8 = 10;
 
 pub const SIZE: i32 = 16; // area procedural: 16x16 cubos por nivel
 pub const NETHER_ROOF: i32 = 7; // capa de piedra que separa los mundos
@@ -52,6 +53,7 @@ pub fn build(seed: u32) -> Scene {
     let t_glass = push(texture::tex_water(16), &mut textures);
     let t_nether = push(texture::tex_netherrack(32), &mut textures);
     let t_glow = push(texture::tex_glowstone(32), &mut textures);
+    let t_portal = push(texture::tex_portal(32), &mut textures);
 
     // Mapas normales derivados de mapas de altura SUAVES (filtro Sobel propio).
     let n_stone = texture::normal_from_height(&texture::height_blobs(32, 0.30, 77), 0.9);
@@ -62,6 +64,8 @@ pub fn build(seed: u32) -> Scene {
     let n_water = push(n_water, &mut textures);
     let n_nether = texture::normal_from_height(&texture::height_blobs(32, 0.30, 131), 1.1);
     let n_nether = push(n_nether, &mut textures);
+    let n_obs = texture::normal_from_height(&texture::height_blobs(32, 0.55, 67), 0.6);
+    let n_obs = push(n_obs, &mut textures);
 
     // ---------------- Materiales ----------------
     // El indice DEBE coincidir con las constantes M_*.
@@ -90,10 +94,13 @@ pub fn build(seed: u32) -> Scene {
         Material::opaque("lava", t_lava)
             .with_phong(0.25, 0.05, 8.0)
             .with_emission(v3(1.0, 0.42, 0.10), 3.2),
-        // 6 - obsidiana pulida (reflexion)
+        // 6 - obsidiana: roca volcanica negra. Especular alto y estrecho para
+        // que se vea vidriada, pero con reflexion moderada: con 0.65 actuaba
+        // como espejo y la textura desaparecia.
         Material::opaque("obsidiana", t_obs)
-            .with_phong(0.30, 0.55, 220.0)
-            .with_reflectivity(0.65),
+            .with_phong(0.75, 0.35, 150.0)
+            .with_normal_map(n_obs)
+            .with_reflectivity(0.18),
         // 7 - vidrio (refraccion fuerte)
         Material::opaque("vidrio", t_glass)
             .with_phong(0.05, 0.60, 200.0)
@@ -108,6 +115,12 @@ pub fn build(seed: u32) -> Scene {
         Material::opaque("glowstone", t_glow)
             .with_phong(0.35, 0.10, 16.0)
             .with_emission(v3(1.0, 0.82, 0.42), 2.6),
+        // 10 - portal: emisivo morado y semitransparente a la vez
+        Material::opaque("portal", t_portal)
+            .with_phong(0.20, 0.30, 60.0)
+            .with_refraction(0.45, 1.10)
+            .with_reflectivity(0.05)
+            .with_emission(v3(0.55, 0.18, 0.95), 1.6),
     ];
 
     let mut world = World::new((-2, 0, -2), (SIZE + 3, 24, SIZE + 3));
@@ -169,7 +182,7 @@ pub fn build(seed: u32) -> Scene {
     }
     for y in 2..5 {
         for x in np_x + 1..np_x + 3 {
-            world.set(x, y, np_z, M_GLASS); // interior refractante
+            world.set(x, y, np_z, M_PORTAL);
         }
     }
 
@@ -264,10 +277,10 @@ pub fn build(seed: u32) -> Scene {
         world.set(x, pbase, pz, M_OBSIDIAN);
         world.set(x, pbase + 4, pz, M_OBSIDIAN);
     }
-    // Interior del portal: vidrio tenido de morado (refraccion).
+    // Interior del portal: mismo material morado que el del Nether.
     for y in pbase + 1..pbase + 4 {
         for x in px + 1..px + 3 {
-            world.set(x, y, pz, M_GLASS);
+            world.set(x, y, pz, M_PORTAL);
         }
     }
 
@@ -324,6 +337,19 @@ pub fn build(seed: u32) -> Scene {
             pos: v3(gx as f32 + 0.5, 2.1, gz as f32 + 0.5),
             color: v3(1.0, 0.80, 0.40),
             intensity: 7.0,
+            attenuate: true,
+        });
+    }
+
+    // Resplandor morado de los dos portales.
+    for &(qx, qy, qz) in &[
+        (np_x as f32 + 2.0, 3.0, np_z as f32 - 0.8),
+        (px as f32 + 2.0, pbase as f32 + 2.5, pz as f32 + 0.8),
+    ] {
+        lights.push(Light {
+            pos: v3(qx, qy, qz),
+            color: v3(0.62, 0.25, 1.0),
+            intensity: 3.5,
             attenuate: true,
         });
     }

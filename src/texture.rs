@@ -227,8 +227,35 @@ pub fn tex_obsidian(n: usize) -> Texture {
     let mut t = Texture::new(n, n);
     for y in 0..n {
         for x in 0..n {
-            let f = fbm(x as f32 * 0.28, y as f32 * 0.28, 3, 61);
-            let c = v3(0.05, 0.03, 0.09).lerp(v3(0.15, 0.10, 0.24), f);
+            // Base casi negra con vetas moradas y algunas facetas mas claras.
+            let veta = fbm(x as f32 * 0.35, y as f32 * 0.35, 4, 61);
+            let faceta = value_noise(x as f32 * 0.55, y as f32 * 0.55, 67);
+            let mut c = v3(0.020, 0.014, 0.040).lerp(v3(0.16, 0.07, 0.30), veta.powf(2.2));
+            if faceta > 0.72 {
+                c = c + v3(0.05, 0.02, 0.09); // aristas cristalinas
+            }
+            let grano = hash21(x as i32, y as i32, 73) * 0.05;
+            t.set(x, y, c * (0.95 + grano));
+        }
+    }
+    t
+}
+
+/// Portal del Nether: remolinos morados brillantes.
+pub fn tex_portal(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let u = x as f32 / n as f32 - 0.5;
+            let v = y as f32 / n as f32 - 0.5;
+            // Coordenadas polares: da un remolino en vez de manchas sueltas.
+            let r = (u * u + v * v).sqrt();
+            let a = v.atan2(u);
+            let f = fbm(a * 2.4 + r * 6.0, r * 9.0, 3, 313);
+            let mut c = v3(0.30, 0.05, 0.52).lerp(v3(0.72, 0.42, 1.0), f);
+            if f > 0.62 {
+                c = c + v3(0.18, 0.10, 0.28); // filamentos brillantes
+            }
             t.set(x, y, c);
         }
     }
