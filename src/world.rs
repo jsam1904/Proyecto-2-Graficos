@@ -80,6 +80,16 @@ impl World {
         }
     }
 
+    /// Vacia una celda. El AABB no se encoge: queda conservador, que es valido.
+    pub fn remove(&mut self, x: i32, y: i32, z: i32) {
+        if let Some(i) = self.index(x, y, z) {
+            if self.data[i] != AIR {
+                self.count -= 1;
+                self.data[i] = AIR;
+            }
+        }
+    }
+
     #[inline]
     pub fn get(&self, x: i32, y: i32, z: i32) -> Option<u8> {
         match self.index(x, y, z) {

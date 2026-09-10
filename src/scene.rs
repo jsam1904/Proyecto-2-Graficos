@@ -30,11 +30,15 @@ pub const M_LEAVES: u8 = 12;
 pub const SIZE: i32 = 16; // area procedural: 16x16 cubos por nivel
 pub const NETHER_ROOF: i32 = 7; // capa de piedra que separa los mundos
 pub const GROUND_BASE: i32 = 8; // primera capa del overworld
-pub const SEA_LEVEL: i32 = GROUND_BASE + 4;
+/// Nivel del mar. Con el ruido reescalado (ver abajo) las alturas van de
+/// GROUND_BASE+1 a GROUND_BASE+8, asi que este nivel inunda solo el ~18% mas
+/// bajo del terreno: un lago, no un oceano que tape todo el relieve.
+pub const SEA_LEVEL: i32 = GROUND_BASE + 3;
 
-/// Punto al que mira la camara (entre los dos niveles).
+/// Punto al que mira la camara. El diorama va de y = 0 (piso del Nether) a
+/// y ~ 21 (copa de los arboles); apuntar a y = 9 lo deja centrado en cuadro.
 pub fn center() -> Vec3 {
-    v3(SIZE as f32 * 0.5, 6.5, SIZE as f32 * 0.5)
+    v3(SIZE as f32 * 0.5, 9.0, SIZE as f32 * 0.5)
 }
 
 pub fn build(seed: u32) -> Scene {
@@ -52,11 +56,11 @@ pub fn build(seed: u32) -> Scene {
     let t_water = push(texture::tex_water(32), &mut textures);
     let t_lava = push(texture::tex_lava(32), &mut textures);
     let t_obs = push(texture::tex_obsidian(32), &mut textures);
-    let t_glass = push(texture::tex_water(16), &mut textures);
+    let t_glass = push(texture::tex_glass(16), &mut textures);
     let t_nether = push(texture::tex_netherrack(32), &mut textures);
     let t_glow = push(texture::tex_glowstone(32), &mut textures);
     let t_portal = push(texture::tex_portal(32), &mut textures);
-    let t_torch = push(texture::tex_lava(16), &mut textures);
+    let t_torch = push(texture::tex_torch(16), &mut textures);
     let t_leaves = push(texture::tex_leaves(32), &mut textures);
 
     // Mapas normales derivados de mapas de altura SUAVES (filtro Sobel propio).
@@ -73,18 +77,28 @@ pub fn build(seed: u32) -> Scene {
 
     // ---------------- Materiales ----------------
     // El indice DEBE coincidir con las constantes M_*.
+    // Cada material tiene su textura y sus propios albedo, especular (ks y
+    // shininess), transparencia y reflectividad. Los que no se indican quedan en
+    // 0 (opaco y mate), que tambien es un valor elegido: la tabla completa esta
+    // en el README.
     let materials = vec![
         // 0 - pasto
-        Material::opaque("pasto", t_grass).with_phong(0.95, 0.05, 8.0),
+        Material::opaque("pasto", t_grass)
+            .with_albedo(v3(0.96, 1.0, 0.92))
+            .with_phong(0.95, 0.05, 8.0),
         // 1 - tierra
-        Material::opaque("tierra", t_dirt).with_phong(0.95, 0.03, 4.0),
-        // 2 - piedra (mapa normal)
+        Material::opaque("tierra", t_dirt)
+            .with_albedo(v3(1.0, 0.96, 0.93))
+            .with_phong(0.95, 0.03, 4.0),
+        // 2 - piedra (mapa normal + reflexion leve)
         Material::opaque("piedra", t_stone)
+            .with_albedo(v3(0.96, 0.97, 1.0))
             .with_phong(0.80, 0.20, 32.0)
             .with_normal_map(n_stone)
-            .with_reflectivity(0.03),
+            .with_reflectivity(0.04),
         // 3 - madera (mapa normal)
         Material::opaque("madera", t_wood)
+            .with_albedo(v3(1.0, 0.95, 0.88))
             .with_phong(0.85, 0.15, 24.0)
             .with_normal_map(n_wood),
         // 4 - agua (refraccion + reflexion + mapa normal de olas)
@@ -95,13 +109,17 @@ pub fn build(seed: u32) -> Scene {
             .with_reflectivity(0.10)
             .with_albedo(v3(0.75, 0.92, 1.0)),
         // 5 - lava (emisivo)
+        // La emision se multiplica por la textura en el shader, asi que el
+        // color final va de rojo oscuro (grietas) a naranja brillante.
         Material::opaque("lava", t_lava)
+            .with_albedo(v3(1.0, 0.85, 0.75))
             .with_phong(0.30, 0.05, 8.0)
-            .with_emission(v3(1.0, 0.42, 0.10), 2.0),
+            .with_emission(v3(1.0, 0.55, 0.25), 2.2),
         // 6 - obsidiana: roca volcanica negra. Especular alto y estrecho para
         // que se vea vidriada, pero con reflexion moderada: con 0.65 actuaba
         // como espejo y la textura desaparecia.
         Material::opaque("obsidiana", t_obs)
+            .with_albedo(v3(0.95, 0.90, 1.0))
             .with_phong(0.75, 0.35, 150.0)
             .with_normal_map(n_obs)
             .with_reflectivity(0.18),
@@ -113,24 +131,30 @@ pub fn build(seed: u32) -> Scene {
             .with_albedo(v3(0.88, 0.96, 0.92)),
         // 8 - netherrack (mapa normal, superficie rugosa y mate)
         Material::opaque("netherrack", t_nether)
+            .with_albedo(v3(1.0, 0.92, 0.90))
             .with_phong(0.70, 0.05, 10.0)
             .with_normal_map(n_nether),
         // 9 - glowstone (emisivo)
         Material::opaque("glowstone", t_glow)
+            .with_albedo(v3(1.0, 0.95, 0.85))
             .with_phong(0.40, 0.10, 16.0)
-            .with_emission(v3(1.0, 0.82, 0.42), 1.5),
+            .with_emission(v3(1.0, 0.85, 0.55), 1.6),
         // 10 - portal: emisivo morado y semitransparente a la vez
         Material::opaque("portal", t_portal)
+            .with_albedo(v3(0.92, 0.85, 1.0))
             .with_phong(0.20, 0.30, 60.0)
             .with_refraction(0.45, 1.10)
             .with_reflectivity(0.05)
             .with_emission(v3(0.55, 0.18, 0.95), 1.6),
         // 11 - llama de antorcha: emision baja para que no se queme a blanco
         Material::opaque("llama", t_torch)
+            .with_albedo(v3(1.0, 0.95, 0.85))
             .with_phong(0.30, 0.10, 12.0)
-            .with_emission(v3(1.0, 0.50, 0.14), 1.35),
+            .with_emission(v3(1.0, 0.80, 0.55), 1.8),
         // 12 - hojas: material propio, no el pasto del suelo
-        Material::opaque("hojas", t_leaves).with_phong(0.92, 0.08, 12.0),
+        Material::opaque("hojas", t_leaves)
+            .with_albedo(v3(0.92, 1.0, 0.90))
+            .with_phong(0.92, 0.08, 12.0),
     ];
 
     let mut world = World::new((-2, 0, -2), (SIZE + 3, 24, SIZE + 3));
@@ -207,8 +231,13 @@ pub fn build(seed: u32) -> Scene {
     // ================= NIVEL SUPERIOR: OVERWORLD =================
     for x in 0..SIZE {
         for z in 0..SIZE {
-            let n = fbm(x as f32 * 0.13, z as f32 * 0.13, 4, seed);
-            let h = GROUND_BASE + 1 + (n * 5.0) as i32;
+            // El fBm de N octavas promedia hacia 0.5 y en la practica solo
+            // recorre [0.25, 0.75]: usado en crudo daba apenas 3 alturas
+            // distintas y el terreno salia plano. Se reescala ese rango util a
+            // [0, 1] para aprovechar toda la amplitud.
+            let raw = fbm(x as f32 * 0.13, z as f32 * 0.13, 4, seed);
+            let n = ((raw - 0.25) / 0.5).clamp(0.0, 1.0);
+            let h = GROUND_BASE + 1 + (n * 7.0) as i32;
 
             for y in GROUND_BASE..=h {
                 let mat = if y == h {
@@ -248,14 +277,9 @@ pub fn build(seed: u32) -> Scene {
 
     // Cabana de madera con ventanas de vidrio.
     let (hx, hz) = (10, 3);
-    let base = top_of(&world, hx, hz).max(SEA_LEVEL) + 1;
+    let base = flatten(&mut world, hx, hz, 5, 4, &top_of);
     for x in hx..hx + 5 {
         for z in hz..hz + 4 {
-            for y in GROUND_BASE..base {
-                if world.get(x, y, z).map_or(true, |m| m == M_WATER) {
-                    world.set(x, y, z, M_STONE);
-                }
-            }
             world.set(x, base, z, M_WOOD); // piso
         }
     }
@@ -279,7 +303,7 @@ pub fn build(seed: u32) -> Scene {
 
     // Portal de obsidiana: el enlace visual entre los dos mundos.
     let (px, pz) = (4, 9);
-    let pbase = top_of(&world, px, pz) + 1;
+    let pbase = flatten(&mut world, px, pz, 4, 1, &top_of);
     for y in pbase..pbase + 4 {
         world.set(px, y, pz, M_OBSIDIAN);
         world.set(px + 3, y, pz, M_OBSIDIAN);
@@ -324,11 +348,15 @@ pub fn build(seed: u32) -> Scene {
     }
 
     // ---------------- Luces y cielo ----------------
-    let sun_dir = v3(0.55, 0.72, 0.42).normalize();
+    // Sol a ~36 grados sobre el horizonte (antes 46). Mas bajo = sombras mas
+    // largas, que es lo que le da lectura al relieve del terreno procedural.
+    // La intensidad sube para compensar el coseno mas rasante en las caras
+    // horizontales.
+    let sun_dir = v3(0.55, 0.50, 0.42).normalize();
     let mut lights = vec![Light {
         pos: sun_dir * 400.0,
-        color: v3(1.0, 0.96, 0.88),
-        intensity: 1.45,
+        color: v3(1.0, 0.94, 0.82),
+        intensity: 1.70,
         attenuate: false,
     }];
 
@@ -337,7 +365,7 @@ pub fn build(seed: u32) -> Scene {
         lights.push(Light {
             pos: v3(lx as f32 + 0.5, NETHER_ROOF as f32 - 2.2, lz as f32 + 0.5),
             color: v3(1.0, 0.40, 0.10),
-            intensity: 4.5,
+            intensity: 2.5,
             attenuate: true,
         });
     }
@@ -347,7 +375,7 @@ pub fn build(seed: u32) -> Scene {
         lights.push(Light {
             pos: v3(gx as f32 + 0.5, 2.1, gz as f32 + 0.5),
             color: v3(1.0, 0.80, 0.40),
-            intensity: 3.5,
+            intensity: 2.6,
             attenuate: true,
         });
     }
@@ -360,7 +388,7 @@ pub fn build(seed: u32) -> Scene {
         lights.push(Light {
             pos: v3(qx, qy, qz),
             color: v3(0.62, 0.25, 1.0),
-            intensity: 3.5,
+            intensity: 1.4,
             attenuate: true,
         });
     }
@@ -369,7 +397,7 @@ pub fn build(seed: u32) -> Scene {
         lights.push(Light {
             pos: t,
             color: v3(1.0, 0.55, 0.18),
-            intensity: 5.0,
+            intensity: 1.6,
             attenuate: true,
         });
     }
@@ -391,11 +419,69 @@ pub fn build(seed: u32) -> Scene {
         ambient: Vec3::splat(0.12) * v3(0.9, 1.0, 1.2),
         // Caja que cubre el hueco del Nether: los rayos que lo atraviesan sin
         // chocar nada se ven rojo muy oscuro en vez de cielo azul.
+        //
+        // Los limites van EXACTAMENTE sobre la huella del diorama. Antes sobraba
+        // un bloque por lado (-1 a SIZE+1) y esa franja tenia el problema de que
+        // un rayo rasante la recorre a lo largo: acumulaba camino suficiente
+        // para tenirse del todo, y se veia como un halo oscuro rectangular
+        // alrededor de la silueta. Sin margen, un rayo que pasa al lado del
+        // diorama ni siquiera entra a la caja.
         fog: Some(Fog {
-            min: v3(-1.0, 0.0, -1.0),
-            max: v3(SIZE as f32 + 1.0, NETHER_ROOF as f32, SIZE as f32 + 1.0),
-            density: 0.45,
+            min: v3(0.0, 0.0, 0.0),
+            max: v3(SIZE as f32, NETHER_ROOF as f32, SIZE as f32),
+            density: 0.30,
             color: v3(0.040, 0.010, 0.010),
         }),
     }
+}
+/// Prepara un terreno plano para construir sobre la huella `w x d` que empieza
+/// en (x0, z0). Devuelve la altura `y` donde va la primera capa del edificio.
+///
+/// Sin esto, la casa y el portal se apoyaban en la altura de UNA esquina y el
+/// resto del terreno los atravesaba. Aqui:
+///   - la altura es el promedio de la huella (nunca bajo el nivel del mar),
+///   - dentro de la huella se rellena por debajo y se vacia por encima,
+///   - en un anillo de un bloque alrededor se recorta lo que sobresalga y se
+///     deja pasto, para que las paredes no queden enterradas.
+fn flatten(
+    world: &mut World,
+    x0: i32,
+    z0: i32,
+    w: i32,
+    d: i32,
+    top_of: &dyn Fn(&World, i32, i32) -> i32,
+) -> i32 {
+    let mut suma = 0;
+    for x in x0..x0 + w {
+        for z in z0..z0 + d {
+            suma += top_of(world, x, z);
+        }
+    }
+    let promedio = (suma as f32 / (w * d) as f32).round() as i32;
+    let level = promedio.max(SEA_LEVEL) + 1;
+
+    for x in (x0 - 1).max(0)..(x0 + w + 1).min(SIZE) {
+        for z in (z0 - 1).max(0)..(z0 + d + 1).min(SIZE) {
+            let dentro = x >= x0 && x < x0 + w && z >= z0 && z < z0 + d;
+            let mut recortado = false;
+            for y in level..24 {
+                if world.get(x, y, z).is_some() {
+                    world.remove(x, y, z);
+                    recortado = true;
+                }
+            }
+            if dentro {
+                // Cimiento solido (tambien reemplaza el agua).
+                for y in GROUND_BASE..level {
+                    let hueco = world.get(x, y, z).map_or(true, |m| m == M_WATER);
+                    if hueco {
+                        world.set(x, y, z, if y == level - 1 { M_DIRT } else { M_STONE });
+                    }
+                }
+            } else if recortado {
+                world.set(x, level - 1, z, M_GRASS);
+            }
+        }
+    }
+    level
 }

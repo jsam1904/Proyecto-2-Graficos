@@ -41,10 +41,26 @@ impl Texture {
         self.get(x, y)
     }
 
-    /// Lee un texel de un mapa normal y lo pasa de [0,1] a [-1,1] (espacio tangente).
+    /// Muestreo bilineal con repeticion. Se usa para los mapas normales: con
+    /// "nearest" cada texel es una faceta plana y aparecen bandas escalonadas
+    /// (se notaba mucho en las olas del agua).
+    pub fn sample_bilinear(&self, u: f32, v: f32) -> Vec3 {
+        let x = (u - u.floor()) * self.w as f32 - 0.5;
+        let y = (v - v.floor()) * self.h as f32 - 0.5;
+        let (x0, y0) = (x.floor(), y.floor());
+        let (fx, fy) = (x - x0, y - y0);
+        let wrap = |i: f32, n: usize| (i as i32).rem_euclid(n as i32) as usize;
+        let (xa, xb) = (wrap(x0, self.w), wrap(x0 + 1.0, self.w));
+        let (ya, yb) = (wrap(y0, self.h), wrap(y0 + 1.0, self.h));
+        let top = self.get(xa, ya).lerp(self.get(xb, ya), fx);
+        let bottom = self.get(xa, yb).lerp(self.get(xb, yb), fx);
+        top.lerp(bottom, fy)
+    }
+
+    /// Lee un mapa normal y lo pasa de [0,1] a [-1,1] (espacio tangente).
     #[inline]
     pub fn sample_normal(&self, u: f32, v: f32) -> Vec3 {
-        let c = self.sample(u, v);
+        let c = self.sample_bilinear(u, v);
         v3(c.x * 2.0 - 1.0, c.y * 2.0 - 1.0, c.z * 2.0 - 1.0).normalize()
     }
 
@@ -291,16 +307,65 @@ pub fn height_planks(n: usize) -> Texture {
 }
 
 /// Mapa de altura de olas para el agua.
+///
+/// Suma de ondas en direcciones distintas (no alineadas a los ejes, que es lo
+/// que dibujaba rayas paralelas). Todas las frecuencias son enteras para que
+/// el mapa se repita sin costura de un bloque al siguiente.
 pub fn height_waves(n: usize) -> Texture {
+    let tau = std::f32::consts::TAU;
     let mut t = Texture::new(n, n);
     for y in 0..n {
         for x in 0..n {
             let u = x as f32 / n as f32;
             let v = y as f32 / n as f32;
             let h = 0.5
-                + 0.25 * (u * std::f32::consts::TAU * 2.0).sin()
-                + 0.25 * (v * std::f32::consts::TAU * 3.0).sin();
+                + 0.18 * ((2.0 * u + 1.0 * v) * tau).sin()
+                + 0.14 * ((1.0 * u - 2.0 * v) * tau + 1.3).sin()
+                + 0.08 * ((3.0 * u + 2.0 * v) * tau + 2.1).sin();
             t.set(x, y, v3(h, h, h));
+        }
+    }
+    t
+}
+
+/// Vidrio: casi incoloro, con marco claro y reflejos diagonales como el de
+/// Minecraft. El color tine lo que se ve a traves.
+pub fn tex_glass(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let borde = x == 0 || y == 0 || x == n - 1 || y == n - 1;
+            let d = (x as i32 - y as i32).rem_euclid(n as i32);
+            // Dos destellos diagonales cortos cerca de una esquina.
+            let destello = (d == 5 || d == 6 || d == 9) && x > n / 4 && x < n * 3 / 4;
+            let c = if borde {
+                v3(0.78, 0.86, 0.88)
+            } else if destello {
+                v3(1.0, 1.0, 1.0)
+            } else {
+                v3(0.93, 0.98, 0.97)
+            };
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// Llama de antorcha: nucleo amarillo casi blanco arriba al centro, naranja
+/// hacia los lados y rojo en la base. La fila 0 es la parte de arriba de la cara.
+pub fn tex_torch(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let u = (x as f32 + 0.5) / n as f32 - 0.5;
+            let v = (y as f32 + 0.5) / n as f32; // 0 arriba, 1 abajo
+            let flicker = fbm(x as f32 * 0.35, y as f32 * 0.22, 3, 503);
+            // Forma de gota: mas ancha abajo, afilada arriba.
+            let ancho = 0.12 + 0.30 * v;
+            let core = (1.0 - (u.abs() / ancho)).clamp(0.0, 1.0) * (0.6 + 0.4 * flicker);
+            let base = v3(0.55, 0.10, 0.02).lerp(v3(1.0, 0.45, 0.06), (1.0 - v * 0.6).clamp(0.0, 1.0));
+            let c = base.lerp(v3(1.0, 0.92, 0.55), core);
+            t.set(x, y, c);
         }
     }
     t

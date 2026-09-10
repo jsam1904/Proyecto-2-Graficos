@@ -70,14 +70,21 @@ impl Vec3 {
         self.x.max(self.y).max(self.z)
     }
 
+    /// Tone mapping Reinhard sobre la LUMINANCIA + gamma 2.2.
+    ///
+    /// Aplicado canal por canal, Reinhard comprime mas el canal dominante que
+    /// los otros y todo color brillante tiende a blanco: la lava salia beige.
+    /// Escalando los tres canales por el mismo factor se conserva el tono.
     pub fn to_rgb8(self) -> [u8; 3] {
+        let fix = |c: f32| if c.is_finite() { c.max(0.0) } else { 0.0 };
+        let (r, g, b) = (fix(self.x), fix(self.y), fix(self.z));
+        let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        let k = if lum > 1e-6 { 1.0 / (1.0 + lum) } else { 1.0 };
         let f = |c: f32| {
-            let c = if c.is_finite() { c.max(0.0) } else { 0.0 };
-            let mapped = c / (1.0 + c); // Reinhard
-            let g = mapped.powf(1.0 / 2.2); // gamma
+            let g = (c * k).min(1.0).powf(1.0 / 2.2); // gamma
             (g * 255.0 + 0.5).clamp(0.0, 255.0) as u8
         };
-        [f(self.x), f(self.y), f(self.z)]
+        [f(r), f(g), f(b)]
     }
 }
 

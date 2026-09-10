@@ -108,20 +108,27 @@ fn main() -> io::Result<()> {
                     "orbit" => {
                         // Vuelta completa alrededor del diorama.
                         cam.yaw = ang;
+                        cam.center = v3(cx, 9.0, cx);
                         cam.pitch = 0.28 + 0.15 * ang.sin();
-                        cam.dist = 33.0 - 4.0 * (ang * 2.0).cos();
+                        cam.dist = 35.0 - 4.0 * (ang * 2.0).cos();
                     }
                     "combo" => {
                         // Vuelta completa mientras la camara sube y baja.
-                        // Encuadre: abajo hace falta MAS distancia (el diorama
-                        // mide ~17 de alto y no cabia); arriba hace falta menos
-                        // (visto en planta solo mide 16x16). El pitch maximo se
-                        // queda en 0.95 rad para que en el apice todavia se
-                        // vea el corte lateral del Nether.
+                        // Encuadre: el diorama va de y=0 (piso del Nether) a
+                        // y=21 (copa de los arboles), asi que de perfil hay que
+                        // apuntar al medio (y~8) y alejarse lo suficiente; visto
+                        // en planta solo mide 16x16 y conviene acercarse. El
+                        // pitch maximo se queda en 0.95 rad para que en el apice
+                        // todavia se vea el corte lateral del Nether.
+                        //
+                        // Ademas hace dos acercamientos por vuelta (a los 90 y
+                        // 270 grados), para que el zoom se lea claramente en
+                        // el video y no solo en el visor interactivo.
+                        let zoom = 0.5 - 0.5 * (2.0 * ang).cos();
                         cam.yaw = ang;
-                        cam.center = v3(cx, 4.5 + 4.0 * k, cx);
+                        cam.center = v3(cx, 8.0 + 4.0 * k - 1.5 * zoom, cx);
                         cam.pitch = 0.06 + 0.89 * k;
-                        cam.dist = 33.0 - 5.0 * k;
+                        cam.dist = 38.0 - 6.0 * k - 5.0 * zoom;
                     }
                     _ => {
                         // VERTICAL: arranca a la altura del Nether, mirando de
@@ -129,9 +136,9 @@ fn main() -> io::Result<()> {
                         // grados, entre +x y +z), y sube hasta la vista aerea del
                         // overworld alejandose para que quepa todo.
                         cam.yaw = 0.62 + 0.34 * k;
-                        cam.center = v3(cx, 3.0 + 7.0 * k, cx);
+                        cam.center = v3(cx, 6.0 + 6.0 * k, cx);
                         cam.pitch = 0.02 + 1.13 * k;
-                        cam.dist = 24.0 + 11.0 * k;
+                        cam.dist = 32.0 + 4.0 * k;
                     }
                 }
 
@@ -162,7 +169,7 @@ fn main() -> io::Result<()> {
             let h = arg(&args, 3, 720usize);
             let ss = arg(&args, 4, 2usize);
 
-            let mut cam = Camera::new(center, 32.0);
+            let mut cam = Camera::new(center, 34.0);
             cam.yaw = 0.85;
             cam.pitch = 0.48;
 

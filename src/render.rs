@@ -122,33 +122,43 @@ impl Scene {
 
     /// Factor de sombra. Devuelve Vec3::ONE si no hay oclusion; los materiales
     /// transparentes dejan pasar luz tintada en vez de bloquearla del todo.
+    ///
+    /// Los bloques emisivos no hacen sombra: son la fuente de luz. Las luces
+    /// puntuales de antorchas y portales viven DENTRO de su bloque, y si ese
+    /// bloque bloqueara el rayo nunca iluminarian nada.
     fn shadow_factor(&self, origin: Vec3, dir: Vec3, dist: f32) -> Vec3 {
         let mut atten = Vec3::ONE;
         let mut o = origin;
         let mut remaining = dist;
+        // Material que se esta atravesando. Sin esto, el siguiente recorrido
+        // arranca dentro de la misma celda y la vuelve a chocar en t = 0.
+        let mut medium = None;
 
-        for _ in 0..3 {
-            match self.world.traverse(o, dir, remaining, None) {
-                None => break,
-                Some(h) => {
-                    let m = self.material(h.mat);
-                    if m.transparency <= 0.0 {
-                        return Vec3::ZERO;
-                    }
-                    let tint = self.tex_color(m, h.u, h.v);
-                    atten = atten * tint * m.transparency;
-                    if atten.max_comp() < 0.02 {
-                        return Vec3::ZERO;
-                    }
-                    remaining -= h.t + EPS;
-                    if remaining <= 0.0 {
-                        break;
-                    }
-                    o = h.point + dir * EPS;
+        for _ in 0..4 {
+            let h = match self.world.traverse(o, dir, remaining, medium) {
+                Some(h) => h,
+                None => return atten,
+            };
+            let m = self.material(h.mat);
+            if !m.is_emissive() {
+                if m.transparency <= 0.0 {
+                    return Vec3::ZERO;
+                }
+                let tint = self.tex_color(m, h.u, h.v);
+                atten = atten * tint * m.transparency;
+                if atten.max_comp() < 0.02 {
+                    return Vec3::ZERO;
                 }
             }
+            remaining -= h.t + EPS;
+            if remaining <= 0.0 {
+                return atten;
+            }
+            o = h.point + dir * EPS;
+            medium = Some(h.mat);
         }
-        atten
+        // Demasiados medios seguidos: se asume oclusion.
+        Vec3::ZERO
     }
 
     /// Traza un rayo y devuelve el color radiante.
@@ -215,7 +225,9 @@ impl Scene {
         }
 
         // --- Emision (material emisivo) ------------------------------------
-        local += m.emission;
+        // Modulada por la textura: si se sumara un color plano, el tone mapping
+        // lo lavaba a un beige uniforme y la lava perdia todo su detalle.
+        local += m.emission * base;
 
         if depth >= max_depth {
             return local;
