@@ -6,9 +6,10 @@
 //!   cargo run --release -- animate [ancho] [alto] [frames] [supersampling] [movimiento]
 //!
 //! `movimiento` define el recorrido de la camara:
-//!   vertical - sube desde el Nether hasta la vista aerea del overworld (default)
-//!   orbit    - vuelta completa alrededor del diorama
-//!   combo    - vuelta completa mientras sube y baja
+//!   combo    - vuelta completa de 360 mientras sube y baja (default, es el
+//!              que conviene entregar: muestra rotacion Y acercamiento)
+//!   orbit    - solo vuelta completa alrededor del diorama
+//!   vertical - solo sube desde el Nether hasta la vista aerea (gira poco)
 //!
 //! `view` abre un visor interactivo en el navegador (mouse + teclado).
 //! `still` guarda out/diorama.bmp y out/diorama.ppm.
@@ -84,7 +85,7 @@ fn main() -> io::Result<()> {
             let h = arg(&args, 3, 540usize);
             let frames = arg(&args, 4, 240usize);
             let ss = arg(&args, 5, 2usize);
-            let mov = args.get(6).cloned().unwrap_or_else(|| "vertical".to_string());
+            let mov = args.get(6).cloned().unwrap_or_else(|| "combo".to_string());
 
             let opts = RenderOpts {
                 samples: ss,

@@ -24,6 +24,8 @@ pub const M_GLASS: u8 = 7;
 pub const M_NETHERRACK: u8 = 8;
 pub const M_GLOWSTONE: u8 = 9;
 pub const M_PORTAL: u8 = 10;
+pub const M_TORCH: u8 = 11;
+pub const M_LEAVES: u8 = 12;
 
 pub const SIZE: i32 = 16; // area procedural: 16x16 cubos por nivel
 pub const NETHER_ROOF: i32 = 7; // capa de piedra que separa los mundos
@@ -54,6 +56,8 @@ pub fn build(seed: u32) -> Scene {
     let t_nether = push(texture::tex_netherrack(32), &mut textures);
     let t_glow = push(texture::tex_glowstone(32), &mut textures);
     let t_portal = push(texture::tex_portal(32), &mut textures);
+    let t_torch = push(texture::tex_lava(16), &mut textures);
+    let t_leaves = push(texture::tex_leaves(32), &mut textures);
 
     // Mapas normales derivados de mapas de altura SUAVES (filtro Sobel propio).
     let n_stone = texture::normal_from_height(&texture::height_blobs(32, 0.30, 77), 0.9);
@@ -92,8 +96,8 @@ pub fn build(seed: u32) -> Scene {
             .with_albedo(v3(0.75, 0.92, 1.0)),
         // 5 - lava (emisivo)
         Material::opaque("lava", t_lava)
-            .with_phong(0.25, 0.05, 8.0)
-            .with_emission(v3(1.0, 0.42, 0.10), 3.2),
+            .with_phong(0.30, 0.05, 8.0)
+            .with_emission(v3(1.0, 0.42, 0.10), 2.0),
         // 6 - obsidiana: roca volcanica negra. Especular alto y estrecho para
         // que se vea vidriada, pero con reflexion moderada: con 0.65 actuaba
         // como espejo y la textura desaparecia.
@@ -113,14 +117,20 @@ pub fn build(seed: u32) -> Scene {
             .with_normal_map(n_nether),
         // 9 - glowstone (emisivo)
         Material::opaque("glowstone", t_glow)
-            .with_phong(0.35, 0.10, 16.0)
-            .with_emission(v3(1.0, 0.82, 0.42), 2.6),
+            .with_phong(0.40, 0.10, 16.0)
+            .with_emission(v3(1.0, 0.82, 0.42), 1.5),
         // 10 - portal: emisivo morado y semitransparente a la vez
         Material::opaque("portal", t_portal)
             .with_phong(0.20, 0.30, 60.0)
             .with_refraction(0.45, 1.10)
             .with_reflectivity(0.05)
             .with_emission(v3(0.55, 0.18, 0.95), 1.6),
+        // 11 - llama de antorcha: emision baja para que no se queme a blanco
+        Material::opaque("llama", t_torch)
+            .with_phong(0.30, 0.10, 12.0)
+            .with_emission(v3(1.0, 0.50, 0.14), 1.35),
+        // 12 - hojas: material propio, no el pasto del suelo
+        Material::opaque("hojas", t_leaves).with_phong(0.92, 0.08, 12.0),
     ];
 
     let mut world = World::new((-2, 0, -2), (SIZE + 3, 24, SIZE + 3));
@@ -285,15 +295,15 @@ pub fn build(seed: u32) -> Scene {
         }
     }
 
-    // Antorchas: pilares de obsidiana rematados con lava.
+    // Antorchas: poste de madera rematado con una llama.
     let mut torches: Vec<Vec3> = Vec::new();
     for &(tx, tz) in &[(13, 12), (7, 6)] {
         let t = top_of(&world, tx, tz);
         for y in t + 1..t + 3 {
-            world.set(tx, y, tz, M_OBSIDIAN);
+            world.set(tx, y, tz, M_WOOD);
         }
-        world.set(tx, t + 3, tz, M_LAVA);
-        torches.push(v3(tx as f32 + 0.5, (t + 4) as f32, tz as f32 + 0.5));
+        world.set(tx, t + 3, tz, M_TORCH);
+        torches.push(v3(tx as f32 + 0.5, (t + 3) as f32 + 0.6, tz as f32 + 0.5));
     }
 
     // Arboles (tronco de madera + copa de hojas).
@@ -307,10 +317,10 @@ pub fn build(seed: u32) -> Scene {
         }
         for dx in -1..=1 {
             for dz in -1..=1 {
-                world.set(tx + dx, t + 4, tz + dz, M_GRASS);
+                world.set(tx + dx, t + 4, tz + dz, M_LEAVES);
             }
         }
-        world.set(tx, t + 5, tz, M_GRASS);
+        world.set(tx, t + 5, tz, M_LEAVES);
     }
 
     // ---------------- Luces y cielo ----------------
@@ -327,7 +337,7 @@ pub fn build(seed: u32) -> Scene {
         lights.push(Light {
             pos: v3(lx as f32 + 0.5, NETHER_ROOF as f32 - 2.2, lz as f32 + 0.5),
             color: v3(1.0, 0.40, 0.10),
-            intensity: 9.0,
+            intensity: 4.5,
             attenuate: true,
         });
     }
@@ -337,7 +347,7 @@ pub fn build(seed: u32) -> Scene {
         lights.push(Light {
             pos: v3(gx as f32 + 0.5, 2.1, gz as f32 + 0.5),
             color: v3(1.0, 0.80, 0.40),
-            intensity: 7.0,
+            intensity: 3.5,
             attenuate: true,
         });
     }
@@ -384,7 +394,7 @@ pub fn build(seed: u32) -> Scene {
         fog: Some(Fog {
             center: center(),
             level: NETHER_ROOF as f32 + 0.7,
-            thickness: 1.8,
+            thickness: 3.5,
             color: v3(0.05, 0.015, 0.015),
         }),
     }

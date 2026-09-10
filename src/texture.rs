@@ -336,3 +336,21 @@ pub fn tex_glowstone(n: usize) -> Texture {
     }
     t
 }
+
+/// Hojas de arbol: verde oscuro con huecos, distinto del pasto del suelo.
+pub fn tex_leaves(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let f = fbm(x as f32 * 0.45, y as f32 * 0.45, 3, 401);
+            let mut c = v3(0.06, 0.22, 0.07).lerp(v3(0.16, 0.42, 0.14), f);
+            // Huecos entre el follaje.
+            if f < 0.34 {
+                c = c * 0.45;
+            }
+            let grano = hash21(x as i32, y as i32, 409) * 0.10;
+            t.set(x, y, c * (0.94 + grano));
+        }
+    }
+    t
+}

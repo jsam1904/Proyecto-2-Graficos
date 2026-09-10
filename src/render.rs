@@ -238,7 +238,11 @@ impl Scene {
 }
 
 /// Render paralelo con hilos de la biblioteca estandar (sin rayon).
-/// Cada hilo recibe una franja contigua del framebuffer, asi no hay locks.
+///
+/// El framebuffer se parte en franjas chicas y los hilos las van tomando de una
+/// cola conforme terminan. Con franjas fijas por hilo, el que recibia puro cielo
+/// terminaba enseguida y el que recibia el interior del Nether cargaba con todo;
+/// asi el reparto se equilibra solo.
 pub fn render_parallel(
     scene: &Scene,
     cam: &Camera,
@@ -248,7 +252,8 @@ pub fn render_parallel(
 ) -> Vec<Vec3> {
     let mut buf = vec![Vec3::ZERO; w * h];
     let threads = opts.threads.max(1);
-    let rows_per_chunk = ((h + threads - 1) / threads).max(1);
+    // Muchas mas franjas que hilos: eso es lo que permite balancear.
+    let rows_per_chunk = 4usize;
     let aspect = w as f32 / h as f32;
     let eye = cam.eye();
     let basis = cam.basis();
@@ -256,10 +261,22 @@ pub fn render_parallel(
     let inv_ss = 1.0 / (ss * ss) as f32;
     let max_depth = opts.max_depth;
 
+    // Bloque propio: la cola debe soltarse antes de devolver `buf`.
+    {
+    let tiles: Vec<(usize, &mut [Vec3])> =
+        buf.chunks_mut(rows_per_chunk * w).enumerate().collect();
+    let queue = std::sync::Mutex::new(tiles.into_iter());
+
     std::thread::scope(|s| {
-        for (chunk_idx, chunk) in buf.chunks_mut(rows_per_chunk * w).enumerate() {
-            let basis = basis;
-            s.spawn(move || {
+        for _ in 0..threads {
+            let queue = &queue;
+            s.spawn(move || loop {
+                // Tomar la siguiente franja libre.
+                let next = queue.lock().map(|mut q| q.next()).unwrap_or(None);
+                let (chunk_idx, chunk) = match next {
+                    Some(t) => t,
+                    None => break,
+                };
                 let y0 = chunk_idx * rows_per_chunk;
                 for (i, px) in chunk.iter_mut().enumerate() {
                     let x = i % w;
@@ -281,6 +298,7 @@ pub fn render_parallel(
             });
         }
     });
+    }
 
     buf
 }
