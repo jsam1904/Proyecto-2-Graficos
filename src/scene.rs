@@ -154,16 +154,17 @@ pub fn build(seed: u32) -> Scene {
         }
     }
 
-    // Dos paredes traseras cerradas: el diorama se ve como casa de munecas.
+    // Paredes cerradas en el FONDO (x = 0 y z = 0). La camara orbita del lado
+    // +x/+z, asi que esas dos caras quedan abiertas y se ve dentro del Nether.
     for y in 1..NETHER_ROOF - 1 {
         for i in 0..SIZE {
-            world.set(SIZE - 1, y, i, M_NETHERRACK);
-            world.set(i, y, SIZE - 1, M_NETHERRACK);
+            world.set(0, y, i, M_NETHERRACK);
+            world.set(i, y, 0, M_NETHERRACK);
         }
     }
 
     // Columnas de netherrack que suben del piso hasta el mar de lava.
-    for &(cx, cz) in &[(4, 4), (11, 6), (6, 11)] {
+    for &(cx, cz) in &[(3, 3), (12, 5), (5, 12)] {
         for y in 1..NETHER_ROOF - 1 {
             world.set(cx, y, cz, M_NETHERRACK);
         }
@@ -171,7 +172,7 @@ pub fn build(seed: u32) -> Scene {
 
     // Portal de obsidiana en la pared del fondo del Nether (plano z = SIZE-1).
     let np_x = 6;
-    let np_z = SIZE - 1;
+    let np_z = 0;
     for y in 1..6 {
         world.set(np_x, y, np_z, M_OBSIDIAN);
         world.set(np_x + 3, y, np_z, M_OBSIDIAN);
@@ -343,7 +344,7 @@ pub fn build(seed: u32) -> Scene {
 
     // Resplandor morado de los dos portales.
     for &(qx, qy, qz) in &[
-        (np_x as f32 + 2.0, 3.0, np_z as f32 - 0.8),
+        (np_x as f32 + 2.0, 3.0, np_z as f32 + 0.8),
         (px as f32 + 2.0, pbase as f32 + 2.5, pz as f32 + 0.8),
     ] {
         lights.push(Light {

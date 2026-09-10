@@ -107,24 +107,25 @@ fn main() -> io::Result<()> {
                     "orbit" => {
                         // Vuelta completa alrededor del diorama.
                         cam.yaw = ang;
-                        cam.pitch = 0.30 + 0.17 * ang.sin();
-                        cam.dist = 27.0 - 5.0 * (ang * 2.0).cos();
+                        cam.pitch = 0.28 + 0.15 * ang.sin();
+                        cam.dist = 33.0 - 4.0 * (ang * 2.0).cos();
                     }
                     "combo" => {
                         // Vuelta completa mientras la camara sube y baja.
                         cam.yaw = ang;
-                        cam.center = v3(cx, 3.2 + 7.6 * k, cx);
-                        cam.pitch = -0.05 + 1.15 * k;
-                        cam.dist = 27.0 - 4.0 * (k * std::f32::consts::PI).sin();
+                        cam.center = v3(cx, 3.0 + 7.0 * k, cx);
+                        cam.pitch = 0.02 + 1.13 * k;
+                        cam.dist = 26.0 + 9.0 * k;
                     }
                     _ => {
-                        // VERTICAL: arranca a la altura del Nether, mirandolo de
-                        // frente por el lado abierto, y sube hasta la vista aerea
-                        // del overworld. Gira apenas para que no quede plano.
-                        cam.yaw = 0.85 + 0.9 * k;
-                        cam.center = v3(cx, 3.2 + 7.6 * k, cx);
-                        cam.pitch = -0.05 + 1.15 * k;
-                        cam.dist = 26.0 - 4.0 * (k * std::f32::consts::PI).sin();
+                        // VERTICAL: arranca a la altura del Nether, mirando de
+                        // frente hacia la esquina ABIERTA del diorama (yaw ~ 45
+                        // grados, entre +x y +z), y sube hasta la vista aerea del
+                        // overworld alejandose para que quepa todo.
+                        cam.yaw = 0.62 + 0.34 * k;
+                        cam.center = v3(cx, 3.0 + 7.0 * k, cx);
+                        cam.pitch = 0.02 + 1.13 * k;
+                        cam.dist = 24.0 + 11.0 * k;
                     }
                 }
 
