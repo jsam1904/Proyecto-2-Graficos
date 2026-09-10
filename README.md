@@ -14,6 +14,15 @@ Los dos mundos están separados por una capa de piedra.
 Incluye tres modos de uso: imagen fija, visor interactivo en el navegador y
 secuencia de frames para armar un video.
 
+## Video
+
+[![Recorrido de la cámara alrededor del diorama](docs/diorama.gif)](diorama.mp4)
+
+La vista previa de arriba es un GIF reducido; haz clic en ella o
+[descarga el video en calidad completa](diorama.mp4) (960×540, 30 fps, 8 s).
+Se generó con `cargo run --release -- animate` (movimiento `combo`: vuelta de
+360° alrededor del diorama, subiendo y bajando, con dos acercamientos).
+
 ---
 
 ## Requisitos
