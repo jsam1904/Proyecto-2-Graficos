@@ -2,6 +2,7 @@
 
 use crate::camera::Camera;
 use crate::material::{fresnel_schlick, tangent_frame, Material};
+use crate::noise::hash31;
 use crate::sky::Sky;
 use crate::texture::Texture;
 use crate::vec3::Vec3;
@@ -18,6 +19,36 @@ pub struct Light {
     pub intensity: f32,
     /// false = luz tipo sol (sin caida por distancia).
     pub attenuate: bool,
+    /// Zona (bioma) que ilumina. `None` = toda la escena. Cada dimension tiene
+    /// su propia luz: el sol no entra a la cueva, ni la lava del Nether pinta
+    /// la isla. De paso, los puntos fuera de la zona no lanzan rayo de sombra.
+    pub zone: Option<Zone>,
+}
+
+/// Caja alineada a los ejes que delimita un bioma del diorama.
+#[derive(Clone, Copy)]
+pub struct Zone {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
+impl Zone {
+    pub fn new(min: Vec3, max: Vec3) -> Zone {
+        Zone { min, max }
+    }
+
+    /// Con un margen chico: los puntos de impacto caen justo sobre las caras
+    /// de los cubos, que coinciden con los bordes de la zona.
+    #[inline]
+    pub fn contains(&self, p: Vec3) -> bool {
+        const M: f32 = 0.01;
+        p.x >= self.min.x - M
+            && p.x <= self.max.x + M
+            && p.y >= self.min.y - M
+            && p.y <= self.max.y + M
+            && p.z >= self.min.z - M
+            && p.z <= self.max.z + M
+    }
 }
 
 /// Parametros de calidad del render. Bajarlos da frames rapidos para
@@ -46,14 +77,18 @@ impl Default for RenderOpts {
 ///
 /// Antes esto se hacia por altura evaluada a distancia fija, lo que pintaba un
 /// manchon circular detras del diorama en las tomas aereas. Con la caja, solo
-/// se tinen los rayos que de verdad atraviesan el hueco del Nether, asi que el
-/// interior se ve oscuro y el cielo del overworld queda intacto.
+/// se tinen los rayos que de verdad atraviesan una dimension cerrada (la cueva,
+/// el Nether o el End), asi que su interior se ve oscuro y el cielo del
+/// overworld queda intacto.
 pub struct Fog {
     pub min: Vec3,
     pub max: Vec3,
     /// Cuanto tine cada unidad recorrida dentro de la caja.
     pub density: f32,
     pub color: Vec3,
+    /// Densidad de estrellas sobre el color de la niebla (0 = sin estrellas).
+    /// La usa el End para simular su cielo negro.
+    pub stars: f32,
 }
 
 pub struct Scene {
@@ -62,51 +97,39 @@ pub struct Scene {
     pub textures: Vec<Texture>,
     pub lights: Vec<Light>,
     pub sky: Sky,
+    /// Luz ambiente por defecto (la del overworld).
     pub ambient: Vec3,
-    pub fog: Option<Fog>,
+    /// Luz ambiente propia de cada bioma; gana la primera zona que contenga
+    /// el punto. Fuera de todas se usa `ambient`.
+    pub ambient_zones: Vec<(Zone, Vec3)>,
+    /// Una caja de niebla por dimension cerrada (cueva, Nether, End).
+    pub fogs: Vec<Fog>,
 }
 
 impl Scene {
     /// Color de fondo para un rayo que se escapa de la escena.
     fn background(&self, ro: Vec3, rd: Vec3) -> Vec3 {
-        let sky = self.sky.sample(rd);
-        let f = match &self.fog {
-            Some(f) => f,
-            None => return sky,
-        };
-
-        // Slab test contra la caja de niebla.
-        let o = [ro.x, ro.y, ro.z];
-        let d = [rd.x, rd.y, rd.z];
-        let lo = [f.min.x, f.min.y, f.min.z];
-        let hi = [f.max.x, f.max.y, f.max.z];
-        let mut t0 = 0.0f32;
-        let mut t1 = f32::INFINITY;
-
-        for i in 0..3 {
-            if d[i].abs() < 1e-9 {
-                if o[i] < lo[i] || o[i] > hi[i] {
-                    return sky;
-                }
+        let mut c = self.sky.sample(rd);
+        for f in &self.fogs {
+            let recorrido = box_path(f, ro, rd);
+            if recorrido <= 0.0 {
                 continue;
             }
-            let inv = 1.0 / d[i];
-            let mut ta = (lo[i] - o[i]) * inv;
-            let mut tb = (hi[i] - o[i]) * inv;
-            if ta > tb {
-                std::mem::swap(&mut ta, &mut tb);
+            let k = (recorrido * f.density).clamp(0.0, 1.0);
+            let mut tint = f.color;
+            if f.stars > 0.0 {
+                tint += Vec3::splat(star(rd, f.stars));
             }
-            t0 = t0.max(ta);
-            t1 = t1.min(tb);
-            if t0 >= t1 {
-                return sky;
-            }
+            c = c.lerp(tint, k);
         }
+        c
+    }
 
-        // Cuanto recorrio el rayo dentro de la caja.
-        let recorrido = (t1 - t0).max(0.0);
-        let k = (recorrido * f.density).clamp(0.0, 1.0);
-        sky.lerp(f.color, k)
+    fn ambient_at(&self, p: Vec3) -> Vec3 {
+        self.ambient_zones
+            .iter()
+            .find(|(z, _)| z.contains(p))
+            .map_or(self.ambient, |(_, a)| *a)
     }
 
     fn material(&self, id: u8) -> &Material {
@@ -187,10 +210,15 @@ impl Scene {
         }
 
         let view = -rd;
-        let mut local = base * self.ambient;
+        let mut local = base * self.ambient_at(hit.point);
 
         // --- Iluminacion directa (Blinn-Phong + sombras) --------------------
         for l in &self.lights {
+            if let Some(z) = &l.zone {
+                if !z.contains(hit.point) {
+                    continue;
+                }
+            }
             let to_l = l.pos - hit.point;
             let dist = to_l.len();
             if dist < 1e-4 {
@@ -275,6 +303,53 @@ impl Scene {
         }
 
         color
+    }
+}
+
+/// Distancia que recorre el rayo dentro de la caja de niebla (slab test).
+fn box_path(f: &Fog, ro: Vec3, rd: Vec3) -> f32 {
+    let o = [ro.x, ro.y, ro.z];
+    let d = [rd.x, rd.y, rd.z];
+    let lo = [f.min.x, f.min.y, f.min.z];
+    let hi = [f.max.x, f.max.y, f.max.z];
+    let mut t0 = 0.0f32;
+    let mut t1 = f32::INFINITY;
+
+    for i in 0..3 {
+        if d[i].abs() < 1e-9 {
+            if o[i] < lo[i] || o[i] > hi[i] {
+                return 0.0;
+            }
+            continue;
+        }
+        let inv = 1.0 / d[i];
+        let mut ta = (lo[i] - o[i]) * inv;
+        let mut tb = (hi[i] - o[i]) * inv;
+        if ta > tb {
+            std::mem::swap(&mut ta, &mut tb);
+        }
+        t0 = t0.max(ta);
+        t1 = t1.min(tb);
+        if t0 >= t1 {
+            return 0.0;
+        }
+    }
+    (t1 - t0).max(0.0)
+}
+
+/// Estrellas: la direccion se cuantiza en celdas y unas pocas se encienden.
+fn star(rd: Vec3, density: f32) -> f32 {
+    let q = 700.0;
+    let h = hash31(
+        (rd.x * q).floor() as i32,
+        (rd.y * q).floor() as i32,
+        (rd.z * q).floor() as i32,
+        4242,
+    );
+    if h > 1.0 - density {
+        0.35 + 0.65 * (h - (1.0 - density)) / density
+    } else {
+        0.0
     }
 }
 
