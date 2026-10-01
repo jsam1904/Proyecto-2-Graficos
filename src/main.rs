@@ -9,7 +9,7 @@
 //!   combo    - vuelta completa de 360 mientras sube y baja (default, es el
 //!              que conviene entregar: muestra rotacion Y acercamiento)
 //!   orbit    - solo vuelta completa alrededor del diorama
-//!   vertical - solo sube desde el Nether hasta la vista aerea (gira poco)
+//!   vertical - solo sube desde la cueva hasta la vista aerea (gira poco)
 //!
 //! `view` abre un visor interactivo en el navegador (mouse + teclado).
 //! `still` guarda out/diorama.bmp y out/diorama.ppm.
@@ -103,6 +103,10 @@ fn main() -> io::Result<()> {
                 let k = 0.5 - 0.5 * ang.cos();
 
                 let mut cam = Camera::new(center, 26.0);
+                // Los tres biomas forman una fila de ~54 cubos a lo largo de x:
+                // de frente o de espaldas (|cos yaw| = 1) hay que alejarse mucho
+                // mas que de perfil, donde la fila se ve de punta.
+                let ancho = ang.cos().abs();
 
                 match mov.as_str() {
                     "orbit" => {
@@ -110,35 +114,35 @@ fn main() -> io::Result<()> {
                         cam.yaw = ang;
                         cam.center = v3(cx, 9.0, cx);
                         cam.pitch = 0.28 + 0.15 * ang.sin();
-                        cam.dist = 35.0 - 4.0 * (ang * 2.0).cos();
+                        cam.dist = 50.0 + 12.0 * ancho;
                     }
                     "combo" => {
                         // Vuelta completa mientras la camara sube y baja.
-                        // Encuadre: el diorama va de y=0 (piso del Nether) a
+                        // Encuadre: el diorama va de y=0 (piso de la cueva) a
                         // y=21 (copa de los arboles), asi que de perfil hay que
-                        // apuntar al medio (y~8) y alejarse lo suficiente; visto
-                        // en planta solo mide 16x16 y conviene acercarse. El
-                        // pitch maximo se queda en 0.95 rad para que en el apice
-                        // todavia se vea el corte lateral del Nether.
+                        // apuntar al medio (y~8). El pitch maximo se queda en
+                        // 0.95 rad para que en el apice todavia se vea el corte
+                        // de la cueva.
                         //
-                        // Ademas hace dos acercamientos por vuelta (a los 90 y
-                        // 270 grados), para que el zoom se lea claramente en
-                        // el video y no solo en el visor interactivo.
-                        let zoom = 0.5 - 0.5 * (2.0 * ang).cos();
+                        // Ademas hace dos acercamientos por vuelta, de frente
+                        // (0 grados, hacia la cueva) y de espaldas (180), para
+                        // que el zoom se lea claramente en el video. De perfil
+                        // no se acerca: ahi el Nether o el End quedan entre la
+                        // camara y la isla.
+                        let zoom = 0.5 + 0.5 * (2.0 * ang).cos();
                         cam.yaw = ang;
                         cam.center = v3(cx, 8.0 + 4.0 * k - 1.5 * zoom, cx);
                         cam.pitch = 0.06 + 0.89 * k;
-                        cam.dist = 38.0 - 6.0 * k - 5.0 * zoom;
+                        cam.dist = 52.0 + 12.0 * ancho - 6.0 * k - 10.0 * zoom;
                     }
                     _ => {
-                        // VERTICAL: arranca a la altura del Nether, mirando de
-                        // frente hacia la esquina ABIERTA del diorama (yaw ~ 45
-                        // grados, entre +x y +z), y sube hasta la vista aerea del
-                        // overworld alejandose para que quepa todo.
-                        cam.yaw = 0.62 + 0.34 * k;
-                        cam.center = v3(cx, 6.0 + 6.0 * k, cx);
+                        // VERTICAL: arranca a la altura de la cueva, mirando de
+                        // frente al lado ABIERTO (+z), y sube hasta la vista
+                        // aerea de los tres biomas.
+                        cam.yaw = 0.10 + 0.25 * k;
+                        cam.center = v3(cx, 5.0 + 6.0 * k, cx);
                         cam.pitch = 0.02 + 1.13 * k;
-                        cam.dist = 32.0 + 4.0 * k;
+                        cam.dist = 58.0 + 4.0 * k;
                     }
                 }
 
@@ -169,9 +173,11 @@ fn main() -> io::Result<()> {
             let h = arg(&args, 3, 720usize);
             let ss = arg(&args, 4, 2usize);
 
-            let mut cam = Camera::new(center, 34.0);
-            cam.yaw = 0.85;
-            cam.pitch = 0.48;
+            // De frente (+z) y un poco girada: el End queda a la izquierda, la
+            // isla con su cueva al centro y el Nether a la derecha.
+            let mut cam = Camera::new(center, 60.0);
+            cam.yaw = 0.30;
+            cam.pitch = 0.40;
 
             let t0 = Instant::now();
             let buf = render::render_parallel(
