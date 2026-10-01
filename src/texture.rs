@@ -419,3 +419,295 @@ pub fn tex_leaves(n: usize) -> Texture {
     }
     t
 }
+// ---------------------------------------------------------------------------
+// Deep Dark (cueva bajo la isla)
+// ---------------------------------------------------------------------------
+
+/// Pizarra profunda (deepslate): gris muy oscuro con vetas verticales.
+pub fn tex_deepslate(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let veta = value_noise(x as f32 * 0.55, y as f32 * 0.12, 601);
+            let f = fbm(x as f32 * 0.25, y as f32 * 0.25, 3, 607);
+            let grano = hash21(x as i32, y as i32, 613) * 0.05;
+            let mut g = 0.17 + 0.10 * f + 0.05 * veta + grano;
+            if veta < 0.22 {
+                g *= 0.70; // grietas verticales
+            }
+            t.set(x, y, v3(g, g, g * 1.08));
+        }
+    }
+    t
+}
+
+/// Ladrillos de pizarra profunda (ciudad antigua).
+pub fn tex_deepslate_bricks(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    let fila = n / 4;
+    for y in 0..n {
+        for x in 0..n {
+            let r = y / fila;
+            let desfase = if r % 2 == 0 { 0 } else { n / 4 };
+            let junta = y % fila == 0 || (x + desfase) % (n / 2) == 0;
+            let f = fbm(x as f32 * 0.4, y as f32 * 0.4, 2, 617);
+            let g = if junta { 0.08 } else { 0.22 + 0.08 * f };
+            t.set(x, y, v3(g, g, g * 1.06));
+        }
+    }
+    t
+}
+
+/// Mapa de altura de los ladrillos: las juntas quedan hundidas.
+pub fn height_bricks(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    let fila = n / 4;
+    for y in 0..n {
+        for x in 0..n {
+            let r = y / fila;
+            let desfase = if r % 2 == 0 { 0 } else { n / 4 };
+            let junta = y % fila == 0 || (x + desfase) % (n / 2) == 0;
+            let h = if junta { 0.0 } else { 0.9 };
+            t.set(x, y, v3(h, h, h));
+        }
+    }
+    t
+}
+
+/// Pizarra reforzada: el marco del "portal" de la ciudad antigua. Bordes
+/// claros (hueso) y centro casi negro.
+pub fn tex_reinforced_deepslate(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let b = x.min(y).min(n - 1 - x).min(n - 1 - y);
+            let f = fbm(x as f32 * 0.35, y as f32 * 0.35, 2, 619);
+            let c = if b < 3 {
+                v3(0.52, 0.50, 0.44).lerp(v3(0.66, 0.64, 0.57), f)
+            } else if b < 5 {
+                v3(0.10, 0.10, 0.11)
+            } else {
+                v3(0.16, 0.16, 0.18).lerp(v3(0.24, 0.24, 0.27), f)
+            };
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// Sculk: casi negro azulado con motas cian.
+pub fn tex_sculk(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let f = fbm(x as f32 * 0.30, y as f32 * 0.30, 3, 701);
+            let mota = hash21(x as i32, y as i32, 709);
+            let mut c = v3(0.015, 0.035, 0.050).lerp(v3(0.04, 0.10, 0.13), f);
+            if mota > 0.93 && f > 0.45 {
+                c = v3(0.20, 0.75, 0.85);
+            }
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// Sensor de sculk: base oscura con tentaculos cian que brillan.
+pub fn tex_sculk_sensor(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let u = x as f32 / n as f32;
+            let v = y as f32 / n as f32;
+            // Tentaculos: bandas finas de un seno deformado por ruido.
+            let w = fbm(u * 6.0, v * 6.0, 3, 719);
+            let banda = ((u * 18.0 + w * 6.0).sin()).abs();
+            let c = if banda < 0.25 {
+                v3(0.35, 0.95, 1.0)
+            } else {
+                v3(0.02, 0.12, 0.16).lerp(v3(0.05, 0.30, 0.36), w)
+            };
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// Linterna de almas: llama cian dentro de un marco metalico oscuro.
+pub fn tex_soul_lantern(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let u = (x as f32 + 0.5) / n as f32 - 0.5;
+            let v = (y as f32 + 0.5) / n as f32 - 0.5;
+            let borde = u.abs() > 0.38 || v.abs() > 0.38;
+            let r = (u * u + v * v).sqrt();
+            let c = if borde {
+                v3(0.08, 0.09, 0.10)
+            } else {
+                v3(0.10, 0.55, 0.65).lerp(v3(0.75, 1.0, 1.0), (1.0 - r * 2.6).clamp(0.0, 1.0))
+            };
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+// ---------------------------------------------------------------------------
+// End (a la izquierda de la isla)
+// ---------------------------------------------------------------------------
+
+/// Piedra del End: amarillo palido con picaduras.
+pub fn tex_end_stone(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let f = fbm(x as f32 * 0.28, y as f32 * 0.28, 3, 801);
+            let pica = hash21(x as i32, y as i32, 809);
+            let mut c = v3(0.78, 0.78, 0.55).lerp(v3(0.90, 0.90, 0.68), f);
+            if pica > 0.90 {
+                c = c * 0.78;
+            }
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// Purpur: baldosas moradas en una rejilla 2x2.
+pub fn tex_purpur(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let junta = x % (n / 2) == 0 || y % (n / 2) == 0;
+            let f = fbm(x as f32 * 0.3, y as f32 * 0.3, 2, 811);
+            let c = if junta {
+                v3(0.42, 0.28, 0.42)
+            } else {
+                v3(0.62, 0.45, 0.62).lerp(v3(0.72, 0.55, 0.72), f)
+            };
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// Planta de chorus: morado apagado con manchas claras.
+pub fn tex_chorus(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let f = fbm(x as f32 * 0.4, y as f32 * 0.4, 3, 821);
+            let mut c = v3(0.30, 0.18, 0.32).lerp(v3(0.52, 0.36, 0.54), f);
+            if f > 0.66 {
+                c = v3(0.80, 0.68, 0.82); // manchas claras de la flor
+            }
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// Cristal del End: facetas rosas y moradas que brillan.
+pub fn tex_end_crystal(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let u = x as f32 / n as f32 - 0.5;
+            let v = y as f32 / n as f32 - 0.5;
+            // Rombo central como en el cubo interior del cristal.
+            let d = u.abs() + v.abs();
+            let f = fbm(x as f32 * 0.5, y as f32 * 0.5, 2, 831);
+            let c = if d < 0.28 {
+                v3(1.0, 0.75, 0.95)
+            } else if d < 0.36 {
+                v3(0.55, 0.20, 0.60)
+            } else {
+                v3(0.70, 0.40, 0.85).lerp(v3(0.95, 0.65, 1.0), f)
+            };
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// Vara del End: nucleo blanco con borde lila.
+pub fn tex_end_rod(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let u = (x as f32 + 0.5) / n as f32 - 0.5;
+            let c = if u.abs() < 0.18 {
+                v3(1.0, 1.0, 1.0)
+            } else {
+                v3(0.80, 0.74, 0.88)
+            };
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+// ---------------------------------------------------------------------------
+// Bosque carmesi del Nether
+// ---------------------------------------------------------------------------
+
+/// Nylium carmesi: musgo rojo sobre el netherrack.
+pub fn tex_crimson_nylium(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let f = fbm(x as f32 * 0.35, y as f32 * 0.35, 3, 901);
+            let grano = hash21(x as i32, y as i32, 907) * 0.10;
+            let c = v3(0.42, 0.04, 0.05).lerp(v3(0.72, 0.10, 0.10), f);
+            t.set(x, y, c * (0.92 + grano));
+        }
+    }
+    t
+}
+
+/// Tallo carmesi: franjas verticales vino con vetas rojas.
+pub fn tex_crimson_stem(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let veta = value_noise(x as f32 * 0.7, y as f32 * 0.10, 911);
+            let mut c = v3(0.30, 0.09, 0.16).lerp(v3(0.46, 0.15, 0.24), veta);
+            if veta > 0.78 {
+                c = v3(0.75, 0.15, 0.12);
+            }
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// Bloque de verruga del Nether: la copa de los hongos gigantes.
+pub fn tex_wart_block(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let f = fbm(x as f32 * 0.45, y as f32 * 0.45, 3, 921);
+            let grano = hash21(x as i32, y as i32, 929) * 0.08;
+            let mut c = v3(0.36, 0.02, 0.02).lerp(v3(0.62, 0.06, 0.05), f);
+            if f < 0.33 {
+                c = c * 0.6;
+            }
+            t.set(x, y, c * (0.95 + grano));
+        }
+    }
+    t
+}
+
+/// Shroomlight: naranja calido con nodulos claros.
+pub fn tex_shroomlight(n: usize) -> Texture {
+    let mut t = Texture::new(n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let f = fbm(x as f32 * 0.4, y as f32 * 0.4, 3, 931);
+            let c = v3(0.85, 0.40, 0.12).lerp(v3(1.0, 0.82, 0.45), f);
+            t.set(x, y, c);
+        }
+    }
+    t
+}
