@@ -82,9 +82,9 @@ fn handle(
             threads,
         };
 
-        let mut cam = Camera::new(center, get("dist", 33.0).clamp(6.0, 80.0));
-        cam.yaw = get("yaw", 0.85);
-        cam.pitch = get("pitch", 0.48).clamp(-1.35, 1.45);
+        let mut cam = Camera::new(center, get("dist", 60.0).clamp(6.0, 100.0));
+        cam.yaw = get("yaw", 0.30);
+        cam.pitch = get("pitch", 0.40).clamp(-1.35, 1.45);
 
         let t0 = std::time::Instant::now();
         let buf = render::render_parallel(scene, &cam, w, h, opts);
@@ -147,7 +147,7 @@ const PAGE: &str = r#"<!doctype html>
 <script>
 const view = document.getElementById('view');
 const info = document.getElementById('info');
-const HOME = { yaw: 0.79, pitch: 0.35, dist: 33 };
+const HOME = { yaw: 0.30, pitch: 0.40, dist: 60 };
 
 // Resolucion base del frame final y factor para el modo movimiento.
 const FULL_W = 960, FULL_H = 540, DRAFT = 0.40;
@@ -217,7 +217,7 @@ window.addEventListener('pointerup', () => {
 });
 view.addEventListener('wheel', e => {
   e.preventDefault();
-  st.dist = Math.max(8, Math.min(75, st.dist + e.deltaY * 0.02));
+  st.dist = Math.max(8, Math.min(95, st.dist + e.deltaY * 0.03));
   moving = true; touch(); settle();
 }, { passive: false });
 window.addEventListener('keydown', e => {
@@ -226,8 +226,8 @@ window.addEventListener('keydown', e => {
   else if (k === 'd') st.yaw += 0.09;
   else if (k === 'w') st.pitch = Math.min(1.4, st.pitch + 0.06);
   else if (k === 's') st.pitch = Math.max(-1.3, st.pitch - 0.06);
-  else if (k === 'q') st.dist = Math.min(70, st.dist + 1.5);
-  else if (k === 'e') st.dist = Math.max(6, st.dist - 1.5);
+  else if (k === 'q') st.dist = Math.min(95, st.dist + 2.0);
+  else if (k === 'e') st.dist = Math.max(6, st.dist - 2.0);
   else if (k === 'r') st = Object.assign({}, HOME);
   else return;
   e.preventDefault(); moving = true; touch(); settle();
