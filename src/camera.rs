@@ -54,6 +54,6 @@ impl Camera {
     }
 
     pub fn zoom(&mut self, d: f32) {
-        self.dist = (self.dist + d).clamp(6.0, 80.0);
+        self.dist = (self.dist + d).clamp(6.0, 100.0);
     }
 }
