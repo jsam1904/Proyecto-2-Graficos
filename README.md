@@ -14,7 +14,7 @@ de otra, construido con cubos texturizados y visto en corte (de frente, desde
   pizarra reforzada y dos linternas de almas). Sin el Warden.
 - **A la derecha, el Nether**: lago de lava con acantilados de netherrack, una
   cascada de lava, glowstone colgando de repisas, hongos carmesí gigantes con
-  shroomlight y el otro extremo del portal.
+  shroomlight y el otro extremo del portal, envuelto en una bruma roja.
 - **A la izquierda, el End**: isla flotante de piedra del End sobre el vacío
   estrellado, pilares de obsidiana con cristales del End, plantas de chorus y una
   torre de purpur con varas del End.
@@ -112,9 +112,9 @@ frame en calidad final (960×540, `ss = 2`, 3 rebotes).
   alumbra la isla (no entra a la cueva ni al Nether o al End, que no tienen sol);
   el Nether y el End llevan su propia luz general tenue (rojiza y lila). Los
   puntos fuera de la zona de una luz ni siquiera lanzan su rayo de sombra.
-- **Niebla por caja**: los rayos que cruzan la cueva o el End sin chocar nada
-  se tiñen del color de esa dimensión en vez de mostrar cielo azul; la del End
-  además lleva estrellas.
+- **Niebla por caja**: los rayos que cruzan la cueva, el Nether o el End sin
+  chocar nada se tiñen del color de esa dimensión en vez de mostrar cielo azul;
+  la del Nether es una bruma rojo oscuro y la del End además lleva estrellas.
 - **Sombras** que respetan la transparencia: al cruzar agua, vidrio o el portal
   la sombra se tiñe y atenúa en lugar de bloquearse por completo. Los bloques
   emisivos no hacen sombra (son la fuente de luz), así que las luces puntuales
