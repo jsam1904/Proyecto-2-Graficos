@@ -318,8 +318,8 @@ pub fn build(seed: u32) -> Scene {
             (end_zone(), v3(0.11, 0.09, 0.14)),
         ],
         // Cajas de niebla: los rayos que atraviesan una dimension cerrada (la
-        // cueva o el vacio del End) sin chocar nada se ven de su color en vez
-        // de cielo azul. El Nether no lleva: esta abierto por arriba.
+        // cueva, el Nether o el vacio del End) sin chocar nada se ven de su
+        // color en vez de cielo azul.
         //
         // Los limites van EXACTAMENTE sobre la huella de cada bioma. Con un
         // bloque de margen, un rayo rasante recorria esa franja a lo largo,
@@ -330,6 +330,14 @@ pub fn build(seed: u32) -> Scene {
                 max: v3(SIZE as f32, CAVE_ROOF as f32, SIZE as f32),
                 density: 0.30,
                 color: v3(0.005, 0.012, 0.018),
+                stars: 0.0,
+            },
+            // El Nether: solo bruma rojo oscuro, sin estrellas.
+            Fog {
+                min: v3(NETHER_X as f32, 0.0, 0.0),
+                max: v3((NETHER_X + SIZE) as f32, 22.0, SIZE as f32),
+                density: 0.40,
+                color: v3(0.08, 0.016, 0.010),
                 stars: 0.0,
             },
             // El End: el vacio negro-morado con estrellas.
